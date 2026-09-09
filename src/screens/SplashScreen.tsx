@@ -1,11 +1,30 @@
-import React from 'react';
-import { StyleSheet, Text } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
 import { MotiView } from 'moti';
 import { AppGradient } from '../components/AppGradient';
 import { colors } from '../theme';
 
 /** Checks Supabase session / local MMKV state before routing (PRD S-01). */
 export function SplashScreen() {
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then(setReduceMotion)
+      .catch(() => setReduceMotion(false));
+  }, []);
+
+  // Reduced motion: tampil statis tanpa animasi (aksesibilitas).
+  if (reduceMotion) {
+    return (
+      <AppGradient style={styles.container}>
+        <Text style={styles.emoji}>🌾</Text>
+        <Text style={styles.title}>sorgumcore</Text>
+        <Text style={styles.subtitle}>AI Racik Resep Sorgum · RAG-powered</Text>
+      </AppGradient>
+    );
+  }
+
   return (
     <AppGradient style={styles.container}>
       <MotiView

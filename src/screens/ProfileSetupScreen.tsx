@@ -3,9 +3,11 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppGradient } from '../components/AppGradient';
 import { Button } from '../components/Button';
+import { Container } from '../components/Container';
 import { FormField } from '../components/FormField';
 import { SelectionChip } from '../components/SelectionChip';
 import { AGE_GROUPS, SPECIAL_CONDITIONS } from '../constants';
+import { useResponsive } from '../hooks/useResponsive';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { colors, radius, spacing, typography } from '../theme';
@@ -17,6 +19,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ProfileSetup'>;
 
 /** Profile Setup — the core differentiation screen (PRD F-02 / S-03). */
 export function ProfileSetupScreen({ navigation }: Props) {
+  const { isDesktop } = useResponsive();
   const userId = useAuthStore((s) => s.user?.id);
   const isGuest = useAuthStore((s) => s.isGuest);
   const updateProfile = useProfileStore((s) => s.updateProfile);
@@ -69,46 +72,59 @@ export function ProfileSetupScreen({ navigation }: Props) {
               : 'Kami pakai data ini untuk menyesuaikan setiap resep yang diracik.'}
           </Text>
 
-          <View style={styles.card}>
-            <FormField
-              label="Nama (opsional)"
-              value={fullName}
-              onChangeText={setFullName}
-              placeholder="cth: Ibu Rina"
-            />
-
-            <Text style={styles.sectionLabel}>Target Umur</Text>
-            {AGE_GROUPS.map((g) => (
-              <SelectionChip
-                key={g.value}
-                label={g.label}
-                emoji={g.emoji}
-                selected={ageGroup === g.value}
-                onPress={() => setAgeGroup(g.value)}
+          <Container>
+            <View style={styles.card}>
+              <FormField
+                label="Nama (opsional)"
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="cth: Ibu Rina"
               />
-            ))}
 
-            <Text style={[styles.sectionLabel, styles.sectionSpacing]}>Kondisi Khusus</Text>
-            {SPECIAL_CONDITIONS.map((c) => (
-              <SelectionChip
-                key={c.value}
-                label={c.label}
-                emoji={c.emoji}
-                selected={condition === c.value}
-                onPress={() => setCondition(c.value)}
+              <Text style={styles.sectionLabel}>Target Umur</Text>
+              <View style={[styles.chipGrid, isDesktop && styles.chipGridWide]}>
+                {AGE_GROUPS.map((g) => (
+                  <View key={g.value} style={[styles.chipCell, isDesktop && styles.chipCellWide]}>
+                    <SelectionChip
+                      label={g.label}
+                      emoji={g.emoji}
+                      selected={ageGroup === g.value}
+                      onPress={() => setAgeGroup(g.value)}
+                    />
+                  </View>
+                ))}
+              </View>
+
+              <Text style={[styles.sectionLabel, styles.sectionSpacing]}>Kondisi Khusus</Text>
+              <View style={[styles.chipGrid, isDesktop && styles.chipGridWide]}>
+                {SPECIAL_CONDITIONS.map((c) => (
+                  <View key={c.value} style={[styles.chipCell, isDesktop && styles.chipCellWide]}>
+                    <SelectionChip
+                      label={c.label}
+                      emoji={c.emoji}
+                      selected={condition === c.value}
+                      onPress={() => setCondition(c.value)}
+                    />
+                  </View>
+                ))}
+              </View>
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              {!canSave && !error ? (
+                <Text style={styles.hint}>
+                  Pilih satu target umur dan satu kondisi khusus untuk melanjutkan.
+                </Text>
+              ) : null}
+
+              <Button
+                title={profile ? 'Simpan Perubahan' : 'Mulai Chat'}
+                onPress={onSave}
+                loading={saving}
+                disabled={!canSave}
+                style={styles.saveBtn}
               />
-            ))}
-
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-
-            <Button
-              title={profile ? 'Simpan Perubahan' : 'Mulai Chat'}
-              onPress={onSave}
-              loading={saving}
-              disabled={!canSave}
-              style={styles.saveBtn}
-            />
-          </View>
+            </View>
+          </Container>
         </ScrollView>
       </SafeAreaView>
     </AppGradient>
@@ -145,6 +161,16 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   sectionSpacing: { marginTop: spacing.lg },
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  chipCell: { width: '100%' },
+  chipGridWide: { gap: spacing.sm },
+  chipCellWide: { width: '48%', flexGrow: 1 },
   error: { color: colors.danger, marginTop: spacing.md, fontSize: 13 },
+  hint: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: spacing.sm,
+    fontStyle: 'italic',
+  },
   saveBtn: { marginTop: spacing.lg },
 });

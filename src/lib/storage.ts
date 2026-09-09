@@ -5,6 +5,7 @@ const KEYS = {
   aiReasoningEnabled: 'ai_reasoning_enabled',
   cachedProfile: 'cached_profile', // JSON of the demographic profile for guests
   lastUserId: 'last_user_id',
+  guestHistory: 'guest_chat_history',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -136,6 +137,14 @@ export const localStore = {
   },
   setLastUserId(id: string): void {
     setString(KEYS.lastUserId, id);
+  },
+
+  /** Riwayat chat tamu (guest) — disimpan sinkron ke MMKV/localStorage. */
+  getGuestHistory(): string | undefined {
+    return getString(KEYS.guestHistory);
+  },
+  setGuestHistory(value: string): void {
+    setString(KEYS.guestHistory, value);
   },
 
   /** Wipe all guest/local state (Settings -> "Hapus Data Lokal"). */

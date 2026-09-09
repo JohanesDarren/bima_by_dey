@@ -16,7 +16,10 @@ export function useChat() {
   const isStreaming = useChatStore((s) => s.isStreaming);
   const streamStatus = useChatStore((s) => s.streamStatus);
   const streamError = useChatStore((s) => s.streamError);
+  const lastUserQuery = useChatStore((s) => s.lastUserQuery);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const retryLast = useChatStore((s) => s.retryLast);
+  const hydrateGuestHistory = useChatStore((s) => s.hydrateGuestHistory);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const loadSessionMessages = useChatStore((s) => s.loadSessionMessages);
   const createNewSession = useChatStore((s) => s.createNewSession);
@@ -28,12 +31,20 @@ export function useChat() {
     [sendMessage, profile, userId, isGuest],
   );
 
+  const retry = useCallback(
+    () => retryLast(profile, userId ?? null, isGuest),
+    [retryLast, profile, userId, isGuest],
+  );
+
   return {
     messages,
     isStreaming,
     streamStatus,
     streamError,
+    lastUserQuery,
     send,
+    retry,
+    hydrateGuestHistory,
     loadSessions,
     loadSessionMessages,
     createNewSession,

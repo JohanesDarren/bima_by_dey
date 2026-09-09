@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
@@ -8,6 +8,7 @@ import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useChatStore } from '../store/chatStore';
 import { localStore } from '../lib/storage';
+import { confirmAsync } from '../utils/confirm';
 import { colors, radius, spacing, typography } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -23,31 +24,23 @@ export function SettingsScreen({ navigation }: Props) {
   const resetChat = useChatStore((s) => s.resetChat);
   const { createNewSession } = useChat();
 
-  const wipeLocalData = () => {
-    Alert.alert(
+  const wipeLocalData = async () => {
+    const ok = await confirmAsync(
       'Hapus Data Lokal?',
-      'Semua data tamu dan pengaturan akan dihapus dari perangkat.',
-      [
-        { text: 'Batal', style: 'cancel' },
-        {
-          text: 'Hapus',
-          style: 'destructive',
-          onPress: () => {
-            if (isGuest) signOut();
-            localStore.clearAll();
-            resetProfile();
-            resetChat();
-          },
-        },
-      ],
+      'Semua data tamu, riwayat chat, dan pengaturan akan dihapus dari perangkat ini. Tindakan ini tidak bisa dibatalkan.',
+      'Hapus',
+      'Batal',
     );
+    if (!ok) return;
+    if (isGuest) await signOut();
+    localStore.clearAll();
+    resetProfile();
+    resetChat();
   };
 
-  const handleLogout = () => {
-    Alert.alert('Keluar', 'Yakin ingin keluar dari akun ini?', [
-      { text: 'Batal', style: 'cancel' },
-      { text: 'Keluar', style: 'destructive', onPress: () => signOut() },
-    ]);
+  const handleLogout = async () => {
+    const ok = await confirmAsync('Keluar', 'Yakin ingin keluar dari akun ini?', 'Keluar', 'Batal');
+    if (ok) await signOut();
   };
 
   const displayName =

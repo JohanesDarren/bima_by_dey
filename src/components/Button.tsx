@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, ActivityIndicator, ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
 import { colors, radius, spacing } from '../theme';
 
 interface Props {
@@ -11,7 +11,10 @@ interface Props {
   style?: ViewStyle | ViewStyle[];
 }
 
-/** Primary action button with loading + disabled states. */
+/**
+ * Primary action button dengan loading/disabled state + feedback tekan
+ * (scale 0.98) agar terasa interaktif.
+ */
 export function Button({
   title,
   onPress,
@@ -26,16 +29,16 @@ export function Button({
   const isDisabled = disabled || loading;
 
   return (
-    <TouchableOpacity
+    <Pressable
       accessibilityRole="button"
-      activeOpacity={0.8}
       disabled={isDisabled}
       onPress={onPress}
-      style={[
+      style={({ pressed }) => [
         styles.base,
         { backgroundColor: bg, borderWidth: variant === 'ghost' ? 1.5 : 0 },
         variant === 'ghost' && { borderColor: colors.primary },
         isDisabled && styles.disabled,
+        pressed && !isDisabled && styles.pressed,
         style,
       ]}
     >
@@ -44,7 +47,7 @@ export function Button({
       ) : (
         <Text style={[styles.text, variant === 'ghost' && { color: colors.primary }]}>{title}</Text>
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -58,4 +61,5 @@ const styles = StyleSheet.create({
   },
   text: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 16 },
   disabled: { opacity: 0.55 },
+  pressed: { transform: [{ scale: 0.97 }], opacity: 0.9 },
 });

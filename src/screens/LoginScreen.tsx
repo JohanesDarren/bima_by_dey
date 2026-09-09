@@ -25,13 +25,26 @@ export function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<{ email?: string; password?: string }>({});
   const signIn = useAuthStore((s) => s.signInWithEmail);
   const signUp = useAuthStore((s) => s.signUpWithEmail);
   const signInAsGuest = useAuthStore((s) => s.signInAsGuest);
 
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const validate = (): boolean => {
+    const fe: { email?: string; password?: string } = {};
+    if (!EMAIL_RE.test(email.trim())) fe.email = 'Format email tidak valid.';
+    if (password.length < 6) fe.password = 'Kata sandi minimal 6 karakter.';
+    setFieldError(fe);
+    return Object.keys(fe).length === 0;
+  };
+
   const submit = async () => {
-    setLoading(true);
+    if (loading) return;
     setError(null);
+    if (!validate()) return;
+    setLoading(true);
     const fn = mode === 'login' ? signIn : signUp;
     const res = await fn(email.trim(), password);
     setLoading(false);
@@ -62,19 +75,27 @@ export function LoginScreen({ navigation }: Props) {
               <FormField
                 label="Email"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(t) => {
+                  setEmail(t);
+                  setFieldError((f) => ({ ...f, email: undefined }));
+                }}
                 placeholder="nama@email.com"
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
+                error={fieldError.email}
               />
               <FormField
                 label="Kata Sandi"
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(t) => {
+                  setPassword(t);
+                  setFieldError((f) => ({ ...f, password: undefined }));
+                }}
                 placeholder="••••••••"
                 secureTextEntry
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                error={fieldError.password}
               />
               {error ? <Text style={styles.error}>{error}</Text> : null}
               <Button
@@ -88,6 +109,7 @@ export function LoginScreen({ navigation }: Props) {
                 onPress={() => {
                   setMode((m) => (m === 'login' ? 'register' : 'login'));
                   setError(null);
+                  setFieldError({});
                 }}
               >
                 <Text style={styles.switchText}>
@@ -106,6 +128,7 @@ export function LoginScreen({ navigation }: Props) {
                 title="Lanjut sebagai Tamu"
                 variant="ghost"
                 onPress={signInAsGuest}
+                disabled={loading}
                 style={styles.guestBtn}
               />
               <Text style={styles.guestNote}>

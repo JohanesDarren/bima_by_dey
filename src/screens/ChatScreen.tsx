@@ -31,6 +31,7 @@ export function ChatScreen({ navigation }: Props) {
     isStreaming,
     streamError,
     send,
+    retry,
     clearStreamError,
     createNewSession,
     abortStream,
@@ -104,11 +105,25 @@ export function ChatScreen({ navigation }: Props) {
       </View>
 
       {streamError ? (
-        <TouchableOpacity style={styles.errorBanner} onPress={clearStreamError}>
+        <View style={styles.errorBanner}>
           <Text style={styles.errorBannerText}>
-            ⚠️ Koneksi terputus. Pesan sebagian tetap tersimpan. Ketuk untuk menutup.
+            ⚠️ Koneksi terputus. Pesan sebagian tetap tersimpan.
           </Text>
-        </TouchableOpacity>
+          <View style={styles.errorBannerActions}>
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={() => {
+                clearStreamError();
+                retry();
+              }}
+            >
+              <Text style={styles.retryBtnText}>↻ Coba Lagi</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={clearStreamError}>
+              <Text style={styles.dismissBtnText}>Tutup</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       ) : null}
 
       <KeyboardAvoidingView
@@ -207,6 +222,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   errorBannerText: { color: colors.surfaceDark, fontSize: 13, fontWeight: '600' },
+  errorBannerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+    marginTop: spacing.xs,
+  },
+  retryBtn: {
+    backgroundColor: colors.surfaceDark,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+  },
+  retryBtnText: { color: colors.white, fontSize: 13, fontWeight: '700' },
+  dismissBtnText: { color: colors.surfaceDark, fontSize: 13, fontWeight: '600' },
   inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',

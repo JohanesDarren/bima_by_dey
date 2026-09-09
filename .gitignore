@@ -8,6 +8,9 @@ node_modules/
 .env.local
 .env.*.local
 
+# Build artifacts (APK)
+*.apk
+
 # Expo
 .expo/
 dist/
