@@ -56,7 +56,7 @@ export function ProfileSetupScreen({ navigation }: Props) {
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
-      navigation.replace('Main');
+      navigation.replace('Browse');
     }
   };
 

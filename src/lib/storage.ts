@@ -6,6 +6,7 @@ const KEYS = {
   cachedProfile: 'cached_profile', // JSON of the demographic profile for guests
   lastUserId: 'last_user_id',
   guestHistory: 'guest_chat_history',
+  cookHistory: 'cook_history',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -145,6 +146,21 @@ export const localStore = {
   },
   setGuestHistory(value: string): void {
     setString(KEYS.guestHistory, value);
+  },
+
+  /** Riwayat sesi masak tamu (list sesi terselesaikan). */
+  getCookHistory<T>(): T[] {
+    const raw = getString(KEYS.cookHistory);
+    if (!raw) return [];
+    try {
+      const v = JSON.parse(raw) as T[];
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  },
+  setCookHistory<T>(value: T[]): void {
+    setString(KEYS.cookHistory, JSON.stringify(value));
   },
 
   /** Wipe all guest/local state (Settings -> "Hapus Data Lokal"). */

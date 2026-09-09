@@ -6,9 +6,12 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useChatStore } from '../store/chatStore';
-import { ChatScreen } from '../screens/ChatScreen';
+import { BrowseScreen } from '../screens/BrowseScreen';
+import { CookingScreen } from '../screens/CookingScreen';
+import { HistoryScreen } from '../screens/HistoryScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { ProfileSetupScreen } from '../screens/ProfileSetupScreen';
+import { RecipeDetailScreen } from '../screens/RecipeDetailScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { SplashScreen } from '../screens/SplashScreen';
 import { colors } from '../theme';
@@ -38,7 +41,6 @@ export function RootNavigator() {
   const bootstrapped = useAuthStore((s) => s.bootstrapped);
   const isGuest = useAuthStore((s) => s.isGuest);
   const userId = useAuthStore((s) => s.user?.id);
-  const profile = useProfileStore((s) => s.profile);
   const hydrated = useProfileStore((s) => s.hydrated);
   const fetchProfile = useProfileStore((s) => s.fetchProfile);
   const bootstrap = useAuthStore((s) => s.bootstrap);
@@ -74,8 +76,7 @@ export function RootNavigator() {
   // Wait for profile hydration (auth + guest) before mounting the navigator.
   if (signedIn && !hydrated) return <LoadingScreen />;
 
-  const hasDemographics = !!profile?.target_age_group && !!profile?.special_condition;
-  const initialRoute = !signedIn ? 'Login' : hasDemographics ? 'Main' : 'ProfileSetup';
+  const initialRoute = !signedIn ? 'Login' : 'Browse';
 
   return (
     <NavigationContainer>
@@ -86,7 +87,10 @@ export function RootNavigator() {
       >
         {signedIn ? (
           <>
-            <Stack.Screen name="Main" component={ChatScreen} />
+            <Stack.Screen name="Browse" component={BrowseScreen} />
+            <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
+            <Stack.Screen name="Cooking" component={CookingScreen} />
+            <Stack.Screen name="History" component={HistoryScreen} />
             <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
           </>

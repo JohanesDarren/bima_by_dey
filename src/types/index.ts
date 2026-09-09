@@ -60,3 +60,55 @@ export interface KroomboxStreamChunk {
   done?: boolean;
   error?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Alur baru (discovery-first) — tipe hasil probe API RAG (2026-09-10)
+// ---------------------------------------------------------------------------
+
+/** Kategori sajian (dipilih user sebelum cari resep lain). */
+export type FoodCategory = 'main_course' | 'soup' | 'dessert' | 'snack' | 'beverage' | 'other';
+
+/** Segmentasi target: untuk siapa & kondisi khusus apa. */
+export interface Segment {
+  ageGroup: AgeGroup | null;
+  condition: SpecialCondition | null;
+}
+
+/** Satu kartu menu andalan (dari RAG, format hasil probe). */
+export interface MenuItem {
+  name: string;
+  description: string;
+  /** Objek gizi: calories/protein/fiber/key_vitamins/minerals/notes. */
+  nutrition: Record<string, string>;
+  strengths: string[];
+  weaknesses: string[];
+  category: FoodCategory;
+}
+
+/** Satu langkah masak dengan durasi opsional. */
+export interface RecipeStep {
+  order: number;
+  title: string;
+  instruction: string;
+  /** Menit; null = langkah tanpa timer. */
+  durationMinutes: number | null;
+}
+
+/** Resep lengkap hasil RAG (format hasil probe). */
+export interface Recipe {
+  name: string;
+  servings: number;
+  ingredients: string[];
+  steps: RecipeStep[];
+  totalMinutes: number;
+  /** Sumber transparansi — nama dokumen KB bila tersedia. */
+  sourceDocs?: string[];
+}
+
+/** Segmen + kategori yang dipakai untuk request resep. */
+export interface RecipeRequest {
+  menuName?: string;
+  query?: string;
+  segment: Segment;
+  category: FoodCategory | null;
+}

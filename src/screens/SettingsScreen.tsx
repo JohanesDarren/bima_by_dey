@@ -3,10 +3,10 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
-import { useChat } from '../hooks/useChat';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useChatStore } from '../store/chatStore';
+import { useFlowStore } from '../store/flowStore';
 import { localStore } from '../lib/storage';
 import { confirmAsync } from '../utils/confirm';
 import { colors, radius, spacing, typography } from '../theme';
@@ -14,7 +14,7 @@ import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
-/** Settings — logout, edit profile, wipe local data (PRD S-05). */
+/** Settings — logout, segmentasi, riwayat, wipe local data. */
 export function SettingsScreen({ navigation }: Props) {
   const profile = useProfileStore((s) => s.profile);
   const isGuest = useAuthStore((s) => s.isGuest);
@@ -22,12 +22,12 @@ export function SettingsScreen({ navigation }: Props) {
   const signOut = useAuthStore((s) => s.signOut);
   const resetProfile = useProfileStore((s) => s.reset);
   const resetChat = useChatStore((s) => s.resetChat);
-  const { createNewSession } = useChat();
+  const resetFlow = useFlowStore((s) => s.reset);
 
   const wipeLocalData = async () => {
     const ok = await confirmAsync(
       'Hapus Data Lokal?',
-      'Semua data tamu, riwayat chat, dan pengaturan akan dihapus dari perangkat ini. Tindakan ini tidak bisa dibatalkan.',
+      'Semua data tamu, riwayat, dan pengaturan akan dihapus dari perangkat ini. Tindakan ini tidak bisa dibatalkan.',
       'Hapus',
       'Batal',
     );
@@ -36,6 +36,7 @@ export function SettingsScreen({ navigation }: Props) {
     localStore.clearAll();
     resetProfile();
     resetChat();
+    resetFlow();
   };
 
   const handleLogout = async () => {
@@ -61,12 +62,16 @@ export function SettingsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.card}>
-          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('ProfileSetup')}>
-            <Text style={styles.rowText}>Edit Profil & Demografi</Text>
+          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Browse')}>
+            <Text style={styles.rowText}>🏠 Beranda (Pilih Menu)</Text>
           </TouchableOpacity>
           <View style={styles.sep} />
-          <TouchableOpacity style={styles.row} onPress={createNewSession}>
-            <Text style={styles.rowText}>Chat Baru</Text>
+          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('ProfileSetup')}>
+            <Text style={styles.rowText}>👤 Profil & Segmentasi</Text>
+          </TouchableOpacity>
+          <View style={styles.sep} />
+          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('History')}>
+            <Text style={styles.rowText}>🕘 Riwayat Masak</Text>
           </TouchableOpacity>
           <View style={styles.sep} />
           <TouchableOpacity style={styles.row} onPress={wipeLocalData}>

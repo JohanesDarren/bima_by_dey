@@ -135,3 +135,79 @@ export class KroomboxError extends Error {
     this.name = 'KroomboxError';
   }
 }
+
+// ---------------------------------------------------------------------------
+// Non-streaming call (untuk data terstruktur: menu, resep, dsb)
+// ---------------------------------------------------------------------------
+
+export interface ChatResponse {
+  response: string;
+}
+
+/**
+ * Panggil /api/chat NON-streaming (fetch biasa). Dipakai saat butuh respons
+ * utuh yang mudah diparse (menu andalan, resep step-by-step).
+ */
+export async function chatKroombox(req: StreamRequest): Promise<string> {
+  const url = `${KROOMBOX_BASE_URL}${KROOMBOX_CHAT_ENDPOINT}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': KROOMBOX_API_KEY,
+    },
+    body: JSON.stringify({
+      message: req.message,
+      history: req.history ?? [],
+      model: req.model ?? null,
+      useRag: req.useRag ?? true,
+      stream: false,
+    }),
+  });
+  if (!res.ok) {
+    throw new KroomboxError(`API error ${res.status}: ${await res.text()}`);
+  }
+  const data = (await res.json()) as ChatResponse;
+  return data.response ?? '';
+}
+
+/**
+ * Ekstrak JSON array dari respons (strip fence) → T[] | null.
+ * Respons menu & pencarian berbentuk array — extractJson (objek) tak cukup.
+ */
+export function extractJsonArray<T>(raw: string): T[] | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const candidate = fence ? fence[1]!.trim() : trimmed;
+  const start = candidate.indexOf('[');
+  const end = candidate.lastIndexOf(']');
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    const v = JSON.parse(candidate.slice(start, end + 1)) as T[];
+    return Array.isArray(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ekstrak JSON dari respons yang mungkin dibungkus markdown fence
+ * (```json ... ```) atau ada teks pengantar. Return null jika tidak ketemu.
+ */
+export function extractJson<T>(raw: string): T | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  // Strip ```json ... ``` fence
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const candidate = fence ? fence[1]!.trim() : trimmed;
+  // Kalau masih ada teks sebelum { atau setelah }, potong di kurung pertama/terakhir
+  const start = candidate.indexOf('{');
+  const end = candidate.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    return JSON.parse(candidate.slice(start, end + 1)) as T;
+  } catch {
+    return null;
+  }
+}
