@@ -11,7 +11,10 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundColor": "#FFF3E6"
       },
-      "package": "com.dey.bimabydey"
+      "package": "com.dey.bimabydey",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "ios": {
       "supportsTablet": true,

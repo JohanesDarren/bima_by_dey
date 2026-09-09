@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
 import { Container } from '../components/Container';
+import { AICompanion } from '../components/AICompanion';
 import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
@@ -134,6 +135,13 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
                 </View>
               ))}
             </View>
+
+            {/* AI menemani — diskusi resep SEBELUM mulai masak (teks + voice dua arah) */}
+            <Text style={styles.sectionTitle}>Diskusi Resep</Text>
+            <AICompanion
+              context={`Kita sedang membahas resep "${displayRecipe.name}" (${displayRecipe.servings} porsi, ±${displayRecipe.totalMinutes} menit). Bahan: ${displayRecipe.ingredients.join(', ')}. Langkah: ${displayRecipe.steps.map((s) => `${s.order}. ${s.title}`).join(' | ')}. Jawab pertanyaan user seputar resep ini dengan ramah.`}
+              placeholder="Tanya soal resep / ganti bahan / porsi…"
+            />
 
             <Button
               title="Mulai Masak — AI Menemanimu 👨‍🍳"

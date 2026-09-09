@@ -1,25 +1,16 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Speech from 'expo-speech';
 import { Button } from '../components/Button';
+import { AICompanion } from '../components/AICompanion';
 import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
-import type { ChatMessage, RecipeStep } from '../types';
-import { streamKroomboxChat } from '../services/kroombox';
+import type { RecipeStep } from '../types';
 import { saveCookHistory } from '../services/history';
-import { buildSystemPrompt } from '../utils/promptBuilder';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Cooking'>;
 
@@ -33,17 +24,13 @@ const fmt = (s: number) =>
 export function CookingScreen({ navigation, route }: Props) {
   const { recipe } = route.params ?? {};
   const segment = useFlowStore((s) => s.segment);
-  const profile = useFlowStore((s) => s.activeMenu);
   const isGuest = useAuthStore((s) => s.isGuest);
 
   const [stepIdx, setStepIdx] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [timerRunning, setTimerRunning] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [msgs, setMsgs] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [streaming, setStreaming] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
+  const [notes, setNotes] = useState<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -61,7 +48,7 @@ export function CookingScreen({ navigation, route }: Props) {
       setSecondsLeft(null);
       setTimerRunning(false);
     }
-    setMsgs([]);
+    setNotes([]);
     scrollRef.current?.scrollTo({ y: 0, animated: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepIdx, recipe?.name]);
@@ -121,10 +108,7 @@ export function CookingScreen({ navigation, route }: Props) {
             segment,
             finishedAt: new Date().toISOString(),
             recipe,
-            notes: msgs
-              .filter((m) => m.role === 'assistant' && m.content.trim())
-              .slice(-5)
-              .map((m) => m.content.slice(0, 160)),
+            notes: notes.slice(-5).map((n) => n.slice(0, 160)),
           });
         } catch {
           // gagal simpan — jangan blokir navigasi
@@ -142,58 +126,6 @@ export function CookingScreen({ navigation, route }: Props) {
       setTimerRunning(true);
     }
   };
-
-  // Diskusi dengan AI — konteks step aktif disuntikkan.
-  const sendChat = useCallback(() => {
-    const text = chatInput.trim();
-    if (!text || streaming) return;
-    setChatInput('');
-    const userMsg: ChatMessage = { role: 'user', content: text, reasoning_content: null };
-    const asstMsg: ChatMessage = { role: 'assistant', content: '', reasoning_content: null };
-    setMsgs((m) => [...m, userMsg, asstMsg]);
-    setStreaming(true);
-
-    const stepCtx = step
-      ? `Saya sedang memasak "${recipe?.name}". Langkah ${stepIdx + 1}/${steps.length}: ${step.title}. ${step.instruction}`
-      : 'Saya sedang memasak.';
-    const sysHint = profile
-      ? `${buildSystemPrompt({
-          id: 'guest',
-          full_name: null,
-          target_age_group: segment.ageGroup,
-          special_condition: segment.condition,
-          ai_reasoning_enabled: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })}\n\n`
-      : '';
-
-    const es = streamKroomboxChat(
-      { message: `${sysHint}${stepCtx}\n\nPertanyaan user: ${text}`, useRag: true, stream: true },
-      {
-        onToken: (delta) => {
-          setMsgs((cur) => {
-            const copy = [...cur];
-            const last = copy[copy.length - 1];
-            if (last?.role === 'assistant') {
-              copy[copy.length - 1] = { ...last, content: last.content + delta };
-            }
-            return copy;
-          });
-        },
-        onDone: () => setStreaming(false),
-        onError: (e) => {
-          setMsgs((cur) => [
-            ...cur,
-            { role: 'assistant', content: `⚠️ ${e.message}`, reasoning_content: null },
-          ]);
-          setStreaming(false);
-        },
-      },
-    );
-    return () => es.close();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatInput, streaming, step, stepIdx, recipe?.name, segment, profile]);
 
   if (!recipe || steps.length === 0) {
     return (
@@ -220,12 +152,6 @@ export function CookingScreen({ navigation, route }: Props) {
             Langkah {stepIdx + 1} dari {steps.length}
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={() => setChatOpen((v) => !v)}
-          style={[styles.chatBtn, chatOpen && styles.chatBtnActive]}
-        >
-          <Text style={styles.chatBtnText}>💬</Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView ref={scrollRef} style={styles.flex} contentContainerStyle={styles.content}>
@@ -296,54 +222,16 @@ export function CookingScreen({ navigation, route }: Props) {
           </View>
         ) : null}
 
-        {/* Chat AI menemani */}
-        {chatOpen ? (
-          <View style={styles.chatPanel}>
-            <Text style={styles.chatPanelTitle}>
-              Tanya AI — "ragu dengan langkah ini? tanyakan dulu"
-            </Text>
-            <ScrollView style={styles.chatMsgs} nestedScrollEnabled>
-              {msgs.length === 0 ? (
-                <Text style={styles.chatHint}>
-                  Contoh: "Berapa lama ayam harus diungkep?" / "Bisa ganti santan dengan susu?"
-                </Text>
-              ) : (
-                msgs.map((m, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.chatBubble,
-                      m.role === 'user' ? styles.chatBubbleUser : styles.chatBubbleAI,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chatBubbleText,
-                        m.role === 'user' && styles.chatBubbleTextUser,
-                      ]}
-                    >
-                      {m.content}
-                    </Text>
-                  </View>
-                ))
-              )}
-              {streaming ? <ActivityIndicator size="small" color={colors.primary} /> : null}
-            </ScrollView>
-            <View style={styles.chatInputRow}>
-              <TextInput
-                style={styles.chatInput}
-                value={chatInput}
-                onChangeText={setChatInput}
-                placeholder="Tanya soal langkah ini…"
-                placeholderTextColor={colors.textMuted}
-                onSubmitEditing={sendChat}
-              />
-              <TouchableOpacity style={styles.chatSendBtn} onPress={sendChat} disabled={streaming}>
-                <Text style={styles.chatSendText}>➤</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : null}
+        {/* AI menemani — diskusi saat masak (teks + voice dua arah) */}
+        <AICompanion
+          context={
+            step
+              ? `Saya sedang memasak "${recipe?.name}". Langkah ${stepIdx + 1}/${steps.length}: ${step.title}. ${step.instruction}. Bantu & temani saya selama proses masak, jawab pertanyaan saat saya ragu.`
+              : `Saya sedang memasak "${recipe?.name}". Temani & bantu saya.`
+          }
+          placeholder={`Tanya soal langkah ${stepIdx + 1} / tanya bahan…`}
+          onAssistantMessage={(t) => setNotes((n) => [...n, t])}
+        />
 
         {isGuest ? <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text> : null}
       </ScrollView>

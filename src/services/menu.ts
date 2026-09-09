@@ -102,16 +102,18 @@ function promptSearchRecipe(query: string, seg: Segment, category: FoodCategory 
  * Ambil daftar menu andalan untuk satu segmentasi (RAG, non-streaming).
  */
 export async function getRecommendedMenus(seg: Segment, count = 5): Promise<MenuItem[]> {
-  const raw = await chatKroombox({
-    message: promptRecommendedMenus(seg, count),
-    useRag: true,
-    stream: false,
-  });
-  const parsed = extractJsonArray<MenuItem>(raw);
-  if (!parsed) {
-    throw new Error('Respons menu tidak bisa diparse. Coba lagi atau ubah segmentasi.');
+  // API flaky (bypass cuota kadang balas "Maaf, tidak ada teks…") → retry.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const raw = await chatKroombox({
+      message: promptRecommendedMenus(seg, count),
+      useRag: true,
+      stream: false,
+    });
+    if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
+    const parsed = extractJsonArray<MenuItem>(raw);
+    if (parsed) return normMenu(parsed);
   }
-  return normMenu(parsed);
+  throw new Error('Respons menu tidak bisa diparse. Coba lagi atau ubah segmentasi.');
 }
 
 /**
@@ -159,14 +161,15 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
  * Cari resep lain via AI sesuai kebutuhan + kategori (RAG, non-streaming).
  */
 export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
-  const raw = await chatKroombox({
-    message: promptSearchRecipe(req.query ?? '', req.segment, req.category),
-    useRag: true,
-    stream: false,
-  });
-  const parsed = extractJsonArray<MenuItem>(raw);
-  if (!parsed) {
-    throw new Error('Respons pencarian tidak bisa diparse. Coba lagi.');
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const raw = await chatKroombox({
+      message: promptSearchRecipe(req.query ?? '', req.segment, req.category),
+      useRag: true,
+      stream: false,
+    });
+    if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
+    const parsed = extractJsonArray<MenuItem>(raw);
+    if (parsed) return normMenu(parsed);
   }
-  return normMenu(parsed);
+  throw new Error('Respons pencarian tidak bisa diparse. Coba lagi.');
 }
