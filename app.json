@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Dapur Sorgum Ceria",
+    "slug": "bima-by-dey",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#FFF3E6"
+      },
+      "package": "com.dey.bimabydey"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dey.bimabydey"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#FFF3E6"
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}
