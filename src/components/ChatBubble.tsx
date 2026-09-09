@@ -1,26 +1,35 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
+import { MotiView } from 'moti';
 import { colors, radius, spacing } from '../theme';
 import type { ChatMessage } from '../types';
 
 interface Props {
   message: ChatMessage;
-}
-
-/** Streams the reasoning text token-by-token into a stable React element. */
-export function ReasoningText({ text }: { text: string }) {
-  return <Text>{text}</Text>;
+  /** Aktifkan animasi masuk (slide + fade) — matikan untuk pesan yang sedang
+   *  di-streaming token-by-token agar tidak memicu animasi berulang. */
+  animated?: boolean;
 }
 
 /**
  * A single chat bubble. Renders markdown for both user + assistant content,
  * and conditionally shows the collapsible reasoning box ("Proses Meracik Resep").
  */
-export function ChatBubble({ message }: Props) {
+export function ChatBubble({ message, animated = true }: Props) {
   const isUser = message.role === 'user';
   const hasReasoning = !!message.reasoning_content;
   const [expanded, setExpanded] = React.useState(false);
+
+  const bubble = (
+    <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
+      {isUser ? (
+        <Text style={styles.userText}>{message.content}</Text>
+      ) : (
+        <Markdown style={markdownStyles}>{message.content}</Markdown>
+      )}
+    </View>
+  );
 
   return (
     <View style={[styles.row, isUser ? styles.rowUser : styles.rowAssistant]}>
@@ -42,13 +51,17 @@ export function ChatBubble({ message }: Props) {
         </TouchableOpacity>
       ) : null}
 
-      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
-        {isUser ? (
-          <Text style={styles.userText}>{message.content}</Text>
-        ) : (
-          <Markdown style={markdownStyles}>{message.content}</Markdown>
-        )}
-      </View>
+      {animated ? (
+        <MotiView
+          from={{ opacity: 0, translateY: 12, scale: 0.97 }}
+          animate={{ opacity: 1, translateY: 0, scale: 1 }}
+          transition={{ type: 'timing', duration: 220 }}
+        >
+          {bubble}
+        </MotiView>
+      ) : (
+        bubble
+      )}
     </View>
   );
 }

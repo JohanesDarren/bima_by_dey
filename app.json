@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Dapur Sorgum Ceria",
-    "slug": "bima-by-dey",
+    "name": "sorgumcore",
+    "slug": "sorgumcore",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

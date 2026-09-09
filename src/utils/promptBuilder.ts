@@ -10,7 +10,7 @@ export function buildSystemPrompt(profile: Profile): string {
   const condition = profile.special_condition ?? 'Umum';
 
   return [
-    'Anda adalah asisten Dapur Sorgum — seorang ahli gizi dan koki yang membantu menyusun resep sehat berbasis sorgum.',
+    'Anda adalah asisten sorgumcore — seorang ahli gizi dan koki yang membantu menyusun resep sehat berbasis sorgum.',
     'Buat resep sesuai dengan parameter pengguna berikut:',
     `Target Umur: [${ageGroup}]`,
     `Kondisi Khusus: [${condition}]`,

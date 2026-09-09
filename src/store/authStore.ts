@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { localStore } from '../lib/storage';
 import type { User } from '@supabase/supabase-js';
@@ -30,13 +31,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   bootstrapped: false,
 
   bootstrap: async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    // Web preview tanpa Supabase terkonfigurasi → langsung guest mode agar
+    // UI bisa dijelajahi tanpa auth.
+    if (Platform.OS === 'web') {
+      localStore.setGuestMode(true);
+      set({ status: 'signedIn', user: null, isGuest: true, bootstrapped: true });
+      return;
+    }
+
+    let session: { user: { id: string } | null } | null = null;
+    try {
+      const res = await supabase.auth.getSession();
+      session = res.data.session;
+    } catch {
+      session = null; // network error / misconfig → treat as signed out
+    }
 
     if (session?.user) {
-      localStore.setLastUserId(session.user.id);
-      set({ status: 'signedIn', user: session.user, isGuest: false, bootstrapped: true });
+      localStore.setLastUserId((session.user as { id: string }).id);
+      set({
+        status: 'signedIn',
+        user: session.user as unknown as User,
+        isGuest: false,
+        bootstrapped: true,
+      });
       return;
     }
 

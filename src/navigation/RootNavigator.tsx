@@ -40,8 +40,17 @@ export function RootNavigator() {
   const profile = useProfileStore((s) => s.profile);
   const hydrated = useProfileStore((s) => s.hydrated);
   const fetchProfile = useProfileStore((s) => s.fetchProfile);
+  const bootstrap = useAuthStore((s) => s.bootstrap);
 
   const signedIn = status === 'signedIn';
+
+  // Boot auth session/guest state exactly once on mount.
+  useEffect(() => {
+    if (!bootstrapped) {
+      bootstrap();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bootstrapped]);
 
   // Once auth resolves, hydrate the profile before choosing the route.
   useEffect(() => {

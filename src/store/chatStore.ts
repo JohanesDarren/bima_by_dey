@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { streamKroomboxChat } from '../services/kroombox';
-import { buildChatMessages, buildSessionTitle } from '../utils/promptBuilder';
+import { buildSessionTitle, buildSystemPrompt } from '../utils/promptBuilder';
 import type { ChatMessage, Profile } from '../types';
 
 type StreamStatus = 'idle' | 'streaming' | 'done' | 'error';
@@ -48,7 +48,7 @@ function welcomeMessage(): ChatMessage {
   return {
     role: 'assistant',
     content:
-      'Halo! 👋 Saya asisten **Dapur Sorgum Ceria**. Ceritakan bahan yang kamu punya, misalnya "Saya punya ayam, selada, dan sorgum", nanti saya racikkan resep sehatnya!',
+      'Halo! 👋 Saya asisten **sorgumcore**. Ceritakan bahan yang kamu punya, misalnya "Saya punya ayam, selada, dan sorgum", nanti saya racikkan resep sehatnya!',
     reasoning_content: null,
   };
 }
@@ -82,10 +82,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const messages = [...base, userMsg, assistantMsg];
     set({ messages, isStreaming: true, streamStatus: 'streaming', streamError: null });
 
-    // Build payload with profile injection (PRD F-03).
-    const payloadMsgs = profile
-      ? buildChatMessages(profile, trimmed)
-      : [{ role: 'user' as const, content: trimmed }];
+    // Build payload with profile injection (PRD F-03). Karena API BIMA tidak
+    // punya field "system" terpisah, parameter demografi digabung ke pesan user.
+    const systemHint = profile ? buildSystemPrompt(profile) + '\n\n' : '';
+    const userPrompt = `${systemHint}${trimmed}`;
+    const history = messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .filter((m) => m.content.trim().length > 0)
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }));
 
     // Session creation (auth only; guests skip DB entirely).
     let sessionId = get().currentSessionId;
@@ -101,24 +108,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     const stream = streamKroomboxChat(
-      { messages: payloadMsgs, stream: true, use_rag: true },
+      { message: userPrompt, history, stream: true, useRag: true },
       {
         onToken: (delta) => {
           const { messages: cur } = get();
           const last = cur[cur.length - 1];
           if (last?.role === 'assistant') {
             const updated = [...cur.slice(0, -1), { ...last, content: last.content + delta }];
-            set({ messages: updated });
-          }
-        },
-        onReasoningToken: (delta) => {
-          const { messages: cur } = get();
-          const last = cur[cur.length - 1];
-          if (last?.role === 'assistant') {
-            const updated = [
-              ...cur.slice(0, -1),
-              { ...last, reasoning_content: (last.reasoning_content ?? '') + delta },
-            ];
             set({ messages: updated });
           }
         },

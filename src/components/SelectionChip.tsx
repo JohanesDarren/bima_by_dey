@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { radius, colors, spacing } from '../theme';
 
 interface Props {
@@ -12,15 +12,16 @@ interface Props {
 /** Selectable chip/radio card for Age Group & Special Condition pickers. */
 export function SelectionChip({ label, selected, emoji, onPress }: Props) {
   return (
-    <View
+    <TouchableOpacity
       accessibilityRole="radio"
       accessibilityState={{ selected }}
-      onTouchEnd={onPress}
+      onPress={onPress}
+      activeOpacity={0.7}
       style={[styles.chip, selected && styles.selected]}
     >
       <Text style={styles.emoji}>{emoji}</Text>
       <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 

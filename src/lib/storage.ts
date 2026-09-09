@@ -1,11 +1,4 @@
-import { MMKV } from 'react-native-mmkv';
-
-/**
- * Synchronous local storage (PRD §5.1: react-native-mmkv 2.x).
- * Used for Guest Mode state, AI settings, and caching the last known profile
- * so the app is usable offline before login (PRD F-01).
- */
-export const storage = new MMKV({ id: 'bima-by-dey' });
+import { Platform } from 'react-native';
 
 const KEYS = {
   guestMode: 'guest_mode',
@@ -14,27 +7,97 @@ const KEYS = {
   lastUserId: 'last_user_id',
 } as const;
 
+// ---------------------------------------------------------------------------
+// Backend adapters: MMKV on native (sync + fast), localStorage on web (SSR-safe).
+// react-native-mmkv is a native module — it cannot run in a browser, so the web
+// platform drops back to window.localStorage so the chat UI still works in Expo Go
+// web / browser previews.
+// ---------------------------------------------------------------------------
+
+interface StorageBackend {
+  getString(key: string): string | undefined;
+  set(key: string, value: string | boolean): void;
+  delete(key: string): void;
+  clearAll(): void;
+}
+
+const isWeb = Platform.OS === 'web';
+
+function createWebBackend(): StorageBackend {
+  const mem = new Map<string, string>();
+  return {
+    getString(key) {
+      try {
+        const v = localStorage.getItem(key);
+        return v === null ? undefined : v;
+      } catch {
+        return mem.get(key);
+      }
+    },
+    set(key, value) {
+      try {
+        localStorage.setItem(key, String(value));
+      } catch {
+        mem.set(key, String(value));
+      }
+    },
+    delete(key) {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        mem.delete(key);
+      }
+    },
+    clearAll() {
+      try {
+        localStorage.clear();
+      } catch {
+        mem.clear();
+      }
+    },
+  };
+}
+
+function createNativeBackend(): StorageBackend {
+  // Lazy require so bundling on web never pulls in the native MMKV module.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { MMKV } = require('react-native-mmkv') as typeof import('react-native-mmkv');
+  const storage = new MMKV({ id: 'bima-by-dey' });
+  return {
+    getString: (key) => storage.getString(key),
+    set: (key, value) => storage.set(key, value),
+    delete: (key) => storage.delete(key),
+    clearAll: () => storage.clearAll(),
+  };
+}
+
+const backend: StorageBackend = isWeb ? createWebBackend() : createNativeBackend();
+
 // --- Generic helpers -------------------------------------------------------
 
 export function getString(key: string): string | undefined {
-  return storage.getString(key);
+  return backend.getString(key);
 }
 
 export function getBoolean(key: string, fallback = false): boolean {
-  const v = storage.getBoolean(key);
-  return v === undefined ? fallback : v;
+  const v = backend.getString(key);
+  // MMKV stores booleans as real bools; web stores strings. Normalize both.
+  if (v === undefined) return fallback;
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return !!v;
 }
 
 export function setBoolean(key: string, value: boolean): void {
-  storage.set(key, value);
+  backend.set(key, value);
 }
 
 export function setString(key: string, value: string): void {
-  storage.set(key, value);
+  backend.set(key, value);
 }
 
 export function removeKey(key: string): void {
-  storage.delete(key);
+  backend.delete(key);
 }
 
 // --- App-specific storage API ---------------------------------------------
@@ -77,7 +140,7 @@ export const localStore = {
 
   /** Wipe all guest/local state (Settings -> "Hapus Data Lokal"). */
   clearAll(): void {
-    storage.clearAll();
+    backend.clearAll();
   },
 };
 

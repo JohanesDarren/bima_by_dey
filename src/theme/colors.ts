@@ -1,5 +1,5 @@
 /**
- * Global color palette — "Dapur Sorgum Ceria" warm orange theme.
+ * Global color palette — "sorgumcore" warm orange theme.
  * Mirrors the web-version's warm orange gradient identity.
  */
 export const colors = {

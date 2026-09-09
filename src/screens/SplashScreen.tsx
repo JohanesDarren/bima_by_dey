@@ -1,5 +1,6 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import { MotiView } from 'moti';
 import { AppGradient } from '../components/AppGradient';
 import { colors } from '../theme';
 
@@ -7,18 +8,42 @@ import { colors } from '../theme';
 export function SplashScreen() {
   return (
     <AppGradient style={styles.container}>
-      <Text style={styles.emoji}>🌾</Text>
-      <Text style={styles.title}>Dapur Sorgum Ceria</Text>
-      <Text style={styles.subtitle}>Sorghum AI Nutritionist</Text>
-      <ActivityIndicator size="large" color={colors.textOnPrimary} style={styles.spinner} />
+      <MotiView
+        from={{ scale: 0.6, opacity: 0, translateY: 20 }}
+        animate={{ scale: 1, opacity: 1, translateY: 0 }}
+        transition={{ type: 'timing', duration: 600 }}
+      >
+        <Text style={styles.emoji}>🌾</Text>
+      </MotiView>
+
+      <MotiView
+        from={{ opacity: 0, translateY: 10 }}
+        animate={{ opacity: 1, translateY: 0 }}
+        transition={{ type: 'timing', duration: 500, delay: 250 }}
+      >
+        <Text style={styles.title}>sorgumcore</Text>
+      </MotiView>
+
+      <MotiView
+        from={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ type: 'timing', duration: 500, delay: 500 }}
+      >
+        <Text style={styles.subtitle}>AI Racik Resep Sorgum · RAG-powered</Text>
+      </MotiView>
     </AppGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emoji: { fontSize: 64, marginBottom: 16 },
-  title: { color: colors.textOnPrimary, fontSize: 28, fontWeight: '800' },
-  subtitle: { color: colors.textOnPrimary, fontSize: 16, marginTop: 6, opacity: 0.9 },
-  spinner: { marginTop: 32 },
+  emoji: { fontSize: 72, marginBottom: 16 },
+  title: { color: colors.textOnPrimary, fontSize: 32, fontWeight: '800', letterSpacing: 0.5 },
+  subtitle: {
+    color: colors.textOnPrimary,
+    fontSize: 15,
+    marginTop: 8,
+    opacity: 0.9,
+    fontWeight: '600',
+  },
 });

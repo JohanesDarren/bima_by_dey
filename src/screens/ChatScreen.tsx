@@ -1,7 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -10,24 +8,35 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { FlashList, FlashListRef } from '@shopify/flash-list';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 import { ChatBubble } from '../components/ChatBubble';
 import { ReasoningToggle } from '../components/ReasoningToggle';
+import { TypingIndicator } from '../components/TypingIndicator';
 import { useChat } from '../hooks/useChat';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { colors, radius, spacing } from '../theme';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
+import type { ChatMessage } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Main'>;
 
 /** Dapur Tanya — the core chat interface with SSE streaming (PRD F-03 / S-04). */
 export function ChatScreen({ navigation }: Props) {
-  const { messages, isStreaming, streamError, send, clearStreamError, createNewSession } =
-    useChat();
+  const {
+    messages,
+    isStreaming,
+    streamError,
+    send,
+    clearStreamError,
+    createNewSession,
+    abortStream,
+  } = useChat();
   const [input, setInput] = useState('');
-  const listRef = useRef<FlatList<unknown>>(null);
+  const listRef = useRef<FlashListRef<ChatMessage>>(null);
 
   const patchProfile = useProfileStore((s) => s.updateProfile);
   const user = useAuthStore((s) => s.user);
@@ -57,19 +66,38 @@ export function ChatScreen({ navigation }: Props) {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, [input, isStreaming, send]);
 
+  // Typing indicator tampil saat streaming & pesan AI terakhir masih kosong
+  // (belum ada token pertama yang tiba).
+  const lastMsg = messages[messages.length - 1];
+  const showTyping =
+    isStreaming && (!lastMsg || lastMsg.role !== 'assistant' || lastMsg.content === '');
+
+  const scrollToEnd = useCallback(() => {
+    listRef.current?.scrollToEnd({ animated: true });
+  }, []);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Dapur Tanya</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={createNewSession} style={styles.addBtn}>
-            <Text style={styles.addBtnText}>+</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={styles.iconBtn}>
-            <Text style={styles.iconBtnText}>⚙️</Text>
-          </TouchableOpacity>
+      {/* Header dengan efek blur (frosted glass) */}
+      <BlurView intensity={40} tint="light" style={styles.header}>
+        <View style={styles.headerInner}>
+          <View style={styles.titleGroup}>
+            <Text style={styles.headerTitle}>sorgumcore</Text>
+            <Text style={styles.headerSubtitle}>Dapur Tanya · AI Racik Resep</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={createNewSession} style={styles.iconBtn}>
+              <Text style={styles.iconBtnText}>＋</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Settings')}
+              style={styles.iconBtn}
+            >
+              <Text style={styles.iconBtnText}>⚙️</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </BlurView>
 
       <View style={styles.controls}>
         <ReasoningToggle enabled={localReasoning} onChange={toggleReasoning} />
@@ -88,13 +116,21 @@ export function ChatScreen({ navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={90}
       >
-        <FlatList
-          ref={listRef as never}
+        <FlashList
+          ref={listRef}
           data={messages}
-          keyExtractor={(_, i) => String(i)}
-          renderItem={({ item }) => <ChatBubble message={item} />}
+          keyExtractor={(item, i) => `${item.role}-${item.created_at ?? 'x'}-${i}`}
+          renderItem={({ item, index }) => (
+            <ChatBubble
+              message={item}
+              animated={
+                !(isStreaming && index === messages.length - 1 && item.role === 'assistant')
+              }
+            />
+          )}
           contentContainerStyle={styles.listContent}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={scrollToEnd}
+          ListFooterComponent={showTyping ? <TypingIndicator /> : null}
         />
 
         <View style={styles.inputBar}>
@@ -106,19 +142,20 @@ export function ChatScreen({ navigation }: Props) {
             placeholderTextColor={colors.textMuted}
             multiline
             maxLength={2000}
-            editable={!isStreaming}
           />
-          <TouchableOpacity
-            style={[styles.sendBtn, (isStreaming || !input.trim()) && styles.sendBtnDisabled]}
-            onPress={onSend}
-            disabled={isStreaming || !input.trim()}
-          >
-            {isStreaming ? (
-              <ActivityIndicator color={colors.textOnPrimary} size="small" />
-            ) : (
+          {isStreaming ? (
+            <TouchableOpacity onPress={abortStream} style={styles.stopBtn}>
+              <View style={styles.stopSquare} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
+              onPress={onSend}
+              disabled={!input.trim()}
+            >
               <Text style={styles.sendBtnText}>➤</Text>
-            )}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          )}
         </View>
       </KeyboardAvoidingView>
       {isGuest ? (
@@ -135,30 +172,21 @@ export function ChatScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   header: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    overflow: 'hidden',
+  },
+  headerInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
+  titleGroup: { flexShrink: 1 },
   headerTitle: { fontSize: 20, fontWeight: '800', color: colors.text },
-  addBtn: {
-    backgroundColor: colors.primary,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addBtnText: { color: colors.textOnPrimary, fontSize: 22, lineHeight: 26 },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
+  headerSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   iconBtn: {
     backgroundColor: colors.surfaceAlt,
     width: 36,
@@ -169,7 +197,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderStrong,
   },
-  iconBtnText: { fontSize: 16 },
+  iconBtnText: { fontSize: 16, color: colors.text },
   controls: { paddingHorizontal: spacing.lg, marginTop: spacing.sm },
   flex: { flex: 1 },
   listContent: { padding: spacing.lg, paddingBottom: spacing.xl },
@@ -211,6 +239,20 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { opacity: 0.5 },
   sendBtnText: { color: colors.textOnPrimary, fontSize: 20 },
+  stopBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopSquare: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+    backgroundColor: colors.textOnPrimary,
+  },
   guestStrip: {
     paddingVertical: spacing.xs,
     backgroundColor: colors.primaryLight,

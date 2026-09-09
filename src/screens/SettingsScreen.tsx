@@ -82,7 +82,7 @@ export function SettingsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.infoText}>Dapur Sorgum Ceria v1.0.0</Text>
+          <Text style={styles.infoText}>sorgumcore v1.0.0</Text>
           <Text style={styles.infoSub}>Sorghum AI Nutritionist — prototype akademik</Text>
         </View>
 
