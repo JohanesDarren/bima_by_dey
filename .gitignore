@@ -11,7 +11,7 @@ node_modules/
 # Expo
 .expo/
 dist/
-dist-check/
+dist-*/
 web-build/
 expo-env.d.ts
 
