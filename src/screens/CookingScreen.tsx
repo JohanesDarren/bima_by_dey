@@ -5,6 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Speech from 'expo-speech';
 import { Button } from '../components/Button';
 import { AICompanion } from '../components/AICompanion';
+import { VoiceCallModal } from '../components/VoiceCallModal';
 import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
@@ -29,7 +30,7 @@ export function CookingScreen({ navigation, route }: Props) {
   const [stepIdx, setStepIdx] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [timerRunning, setTimerRunning] = useState(false);
-  const [voiceOn, setVoiceOn] = useState(false);
+  const [voiceCallVisible, setVoiceCallVisible] = useState(false);
   const [notes, setNotes] = useState<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -53,14 +54,7 @@ export function CookingScreen({ navigation, route }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepIdx, recipe?.name]);
 
-  // Bacakan instruksi bila voice aktif.
-  useEffect(() => {
-    if (voiceOn && step) {
-      const dur = step.durationMinutes ? `Langkah ini sekitar ${step.durationMinutes} menit. ` : '';
-      Speech.speak(`${step.title}. ${dur}${step.instruction}`, { language: 'id-ID' });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepIdx, voiceOn]);
+  // Removed old naive TTS loop here
 
   // Tick timer.
   useEffect(() => {
@@ -84,13 +78,6 @@ export function CookingScreen({ navigation, route }: Props) {
       timerRef.current = null;
     }
   }
-
-  const toggleVoice = () => {
-    setVoiceOn((v) => {
-      if (v) Speech.stop();
-      return !v;
-    });
-  };
 
   const speakNow = () => {
     if (!step) return;
@@ -152,6 +139,9 @@ export function CookingScreen({ navigation, route }: Props) {
             Langkah {stepIdx + 1} dari {steps.length}
           </Text>
         </View>
+        <TouchableOpacity style={styles.voiceCallHeaderBtn} onPress={() => setVoiceCallVisible(true)}>
+          <Text style={styles.voiceCallHeaderBtnText}>📞 Voice Call</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView ref={scrollRef} style={styles.flex} contentContainerStyle={styles.content}>
@@ -212,12 +202,10 @@ export function CookingScreen({ navigation, route }: Props) {
                 style={styles.nextBtn}
               />
             </View>
-            <TouchableOpacity onPress={toggleVoice} style={styles.voiceToggleRow}>
-              <Text style={[styles.voiceToggleText, voiceOn && styles.voiceToggleOn]}>
-                {voiceOn
-                  ? '🔊 Voice assistant: NYALA (bacakan tiap langkah)'
-                  : '🔇 Voice assistant: mati'}
-              </Text>
+            <TouchableOpacity onPress={() => setVoiceCallVisible(true)} style={styles.voiceToggleRow}>
+              <View style={styles.voiceCallBanner}>
+                <Text style={styles.voiceCallBannerText}>📞 Mode Voice Call (Hands-free)</Text>
+              </View>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -235,6 +223,12 @@ export function CookingScreen({ navigation, route }: Props) {
 
         {isGuest ? <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text> : null}
       </ScrollView>
+      
+      <VoiceCallModal 
+        visible={voiceCallVisible}
+        onClose={() => setVoiceCallVisible(false)}
+        segment={segment}
+      />
     </SafeAreaView>
   );
 }
@@ -256,6 +250,13 @@ const styles = StyleSheet.create({
   headerMid: { flex: 1, paddingHorizontal: spacing.xs },
   headerTitle: { ...typography.body, color: colors.text, fontWeight: '800' },
   headerSub: { fontSize: 12, color: colors.textMuted },
+  voiceCallHeaderBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+  },
+  voiceCallHeaderBtnText: { color: colors.textOnPrimary, fontSize: 12, fontWeight: '700' },
   chatBtn: {
     width: 38,
     height: 38,
@@ -317,9 +318,16 @@ const styles = StyleSheet.create({
   },
   voiceBtnText: { color: colors.text, fontWeight: '700', fontSize: 13 },
   nextBtn: { flex: 1 },
-  voiceToggleRow: { marginTop: spacing.md, alignSelf: 'center' },
-  voiceToggleText: { color: colors.textMuted, fontSize: 12 },
-  voiceToggleOn: { color: colors.success, fontWeight: '700' },
+  voiceToggleRow: { marginTop: spacing.md, alignSelf: 'stretch' },
+  voiceCallBanner: {
+    backgroundColor: colors.primary + '15',
+    borderColor: colors.primary + '40',
+    borderWidth: 1,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  voiceCallBannerText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
   chatPanel: {
     marginTop: spacing.lg,
     backgroundColor: colors.surface,

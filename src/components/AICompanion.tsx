@@ -12,7 +12,6 @@ import * as Speech from 'expo-speech';
 import { colors, radius, spacing, typography } from '../theme';
 import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/kroombox';
-import { useVoiceInput } from '../hooks/useVoiceInput';
 
 interface Props {
   /** Konteks yang disuntikkan ke AI (resep / langkah aktif). */
@@ -37,7 +36,6 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
   const [streaming, setStreaming] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const scrollRef = useRef<ScrollView>(null);
-  const voice = useVoiceInput();
 
   const speak = useCallback((text: string) => {
     Speech.stop();
@@ -49,7 +47,6 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
       const text = (overrideText ?? input).trim();
       if (!text || streaming) return;
       setInput('');
-      voice.resetTranscript();
       const userMsg: ChatMessage = { role: 'user', content: text, reasoning_content: null };
       const asstMsg: ChatMessage = { role: 'assistant', content: '', reasoning_content: null };
       setMsgs((m) => [...m, userMsg, asstMsg]);
@@ -91,20 +88,8 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
       );
       return () => es.close();
     },
-    [input, streaming, context, autoSpeak, speak, voice, onAssistantMessage],
+    [input, streaming, context, autoSpeak, speak, onAssistantMessage],
   );
-
-  const onMicPress = async () => {
-    if (voice.listening) {
-      await voice.stopListening();
-      // Hasil transcript siap → kirim bila ada
-      if (voice.transcript.trim()) {
-        send(voice.transcript);
-      }
-      return;
-    }
-    await voice.startListening();
-  };
 
   return (
     <View style={[styles.panel, compact && styles.panelCompact]}>
@@ -142,22 +127,12 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
         {streaming ? <ActivityIndicator size="small" color={colors.primary} /> : null}
       </ScrollView>
 
-      {voice.error ? <Text style={styles.voiceError}>{voice.error}</Text> : null}
-
       <View style={styles.inputRow}>
-        {voice.available && !compact ? (
-          <TouchableOpacity
-            onPress={onMicPress}
-            style={[styles.micBtn, voice.listening && styles.micBtnActive]}
-          >
-            <Text style={styles.micText}>{voice.listening ? '🔴' : '🎤'}</Text>
-          </TouchableOpacity>
-        ) : null}
         <TextInput
           style={styles.input}
           value={input}
           onChangeText={setInput}
-          placeholder={voice.transcript || placeholder || 'Tanya AI…'}
+          placeholder={placeholder || 'Tanya AI…'}
           placeholderTextColor={colors.textMuted}
           onSubmitEditing={() => send()}
           multiline
@@ -207,20 +182,7 @@ const styles = StyleSheet.create({
   bubbleAI: { backgroundColor: colors.surfaceAlt, alignSelf: 'flex-start', borderTopLeftRadius: 4 },
   bubbleText: { color: colors.text, fontSize: 14, lineHeight: 20 },
   bubbleTextUser: { color: colors.textOnPrimary },
-  voiceError: { color: colors.danger, fontSize: 12, marginBottom: spacing.xs },
   inputRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' },
-  micBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-  },
-  micBtnActive: { backgroundColor: colors.danger, borderColor: colors.danger },
-  micText: { fontSize: 17 },
   input: {
     flex: 1,
     minHeight: 40,
