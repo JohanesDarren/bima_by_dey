@@ -150,25 +150,29 @@ export interface ChatResponse {
  */
 export async function chatKroombox(req: StreamRequest): Promise<string> {
   const url = `${KROOMBOX_BASE_URL}${KROOMBOX_CHAT_ENDPOINT}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': KROOMBOX_API_KEY,
-    },
-    body: JSON.stringify({
-      message: req.message,
-      history: req.history ?? [],
-      model: req.model ?? null,
-      useRag: req.useRag ?? true,
-      stream: false,
-    }),
-  });
-  if (!res.ok) {
-    throw new KroomboxError(`API error ${res.status}: ${await res.text()}`);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': KROOMBOX_API_KEY,
+      },
+      body: JSON.stringify({
+        message: req.message,
+        history: req.history ?? [],
+        model: req.model ?? null,
+        useRag: req.useRag ?? true,
+        stream: false,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`API error ${res.status}`);
+    }
+    const data = (await res.json()) as ChatResponse;
+    return data.response ?? '';
+  } catch (error) {
+    throw new KroomboxError('data dokumen tidak ditemukan');
   }
-  const data = (await res.json()) as ChatResponse;
-  return data.response ?? '';
 }
 
 /**

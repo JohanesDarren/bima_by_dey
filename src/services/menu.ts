@@ -104,24 +104,26 @@ function promptSearchRecipe(query: string, seg: Segment, category: FoodCategory 
 export async function getRecommendedMenus(seg: Segment, count = 5): Promise<MenuItem[]> {
   // API flaky (bypass cuota kadang balas "Maaf, tidak ada teks…") → retry.
   for (let attempt = 0; attempt < 3; attempt++) {
-    const raw = await chatKroombox({
-      message: promptRecommendedMenus(seg, count),
-      useRag: true,
-      stream: false,
-    });
-    if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
-    const parsed = extractJsonArray<MenuItem>(raw);
-    if (parsed) return normMenu(parsed);
+    try {
+      const raw = await chatKroombox({
+        message: promptRecommendedMenus(seg, count),
+        useRag: true,
+        stream: false,
+      });
+      if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
+      const parsed = extractJsonArray<MenuItem>(raw);
+      if (parsed) return normMenu(parsed);
+    } catch (e) {
+      if (attempt === 2) throw e;
+    }
   }
-  throw new Error('Respons menu tidak bisa diparse. Coba lagi atau ubah segmentasi.');
+  throw new Error('data dokumen tidak ditemukan');
 }
 
 /**
  * Ambil resep step-by-step untuk satu menu + segmentasi (RAG, non-streaming).
  */
 export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe> {
-  // API flaky: kadang balas "Maaf, tidak ada teks…" (bypass cuota) padahal respons
-  // JSON valid di percobaan lain. Coba ulang sampai dapat respons berisi.
   let raw = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     const r = await chatKroombox({
@@ -136,7 +138,6 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
   }
   const parsed = extractJson<Recipe>(raw);
   if (!parsed || !Array.isArray(parsed.steps) || parsed.steps.length === 0) {
-    // Fallback: bila API balas teks biasa (bukan JSON) → jadikan resep 1 langkah.
     const cleanText = raw.trim().replace(/^```(?:json)?|```$/g, '');
     return {
       name: menuName,
@@ -162,14 +163,18 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
  */
 export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
   for (let attempt = 0; attempt < 3; attempt++) {
-    const raw = await chatKroombox({
-      message: promptSearchRecipe(req.query ?? '', req.segment, req.category),
-      useRag: true,
-      stream: false,
-    });
-    if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
-    const parsed = extractJsonArray<MenuItem>(raw);
-    if (parsed) return normMenu(parsed);
+    try {
+      const raw = await chatKroombox({
+        message: promptSearchRecipe(req.query ?? '', req.segment, req.category),
+        useRag: true,
+        stream: false,
+      });
+      if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
+      const parsed = extractJsonArray<MenuItem>(raw);
+      if (parsed) return normMenu(parsed);
+    } catch (e) {
+      if (attempt === 2) throw e;
+    }
   }
-  throw new Error('Respons pencarian tidak bisa diparse. Coba lagi.');
+  throw new Error('data dokumen tidak ditemukan');
 }
