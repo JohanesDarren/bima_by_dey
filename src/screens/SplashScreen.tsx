@@ -1,8 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
-import { MotiView } from 'moti';
+import { View } from 'react-native';
 import { AppGradient } from '../components/AppGradient';
 import { colors } from '../theme';
+
+// Safe lazy wrapper: if moti/Reanimated fails to load, fall back to plain View.
+let MotiViewSafe: React.ComponentType<any>;
+try {
+  MotiViewSafe = require('moti').MotiView;
+} catch {
+  MotiViewSafe = ({ children }: { children: React.ReactNode }) => <View>{children}</View>;
+}
 
 /** Checks Supabase session / local MMKV state before routing (PRD S-01). */
 export function SplashScreen() {
@@ -27,29 +35,29 @@ export function SplashScreen() {
 
   return (
     <AppGradient style={styles.container}>
-      <MotiView
+      <MotiViewSafe
         from={{ scale: 0.6, opacity: 0, translateY: 20 }}
         animate={{ scale: 1, opacity: 1, translateY: 0 }}
         transition={{ type: 'timing', duration: 600 }}
       >
         <Text style={styles.emoji}>🌾</Text>
-      </MotiView>
+      </MotiViewSafe>
 
-      <MotiView
+      <MotiViewSafe
         from={{ opacity: 0, translateY: 10 }}
         animate={{ opacity: 1, translateY: 0 }}
         transition={{ type: 'timing', duration: 500, delay: 250 }}
       >
         <Text style={styles.title}>sorgumcore</Text>
-      </MotiView>
+      </MotiViewSafe>
 
-      <MotiView
+      <MotiViewSafe
         from={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ type: 'timing', duration: 500, delay: 500 }}
       >
         <Text style={styles.subtitle}>AI Racik Resep Sorgum · RAG-powered</Text>
-      </MotiView>
+      </MotiViewSafe>
     </AppGradient>
   );
 }

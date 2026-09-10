@@ -1,9 +1,17 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
-import { MotiView } from 'moti';
 import { colors, radius, spacing } from '../theme';
 import type { ChatMessage } from '../types';
+
+// Safe lazy wrapper: if moti/Reanimated fails to load (e.g. device incompatibility),
+// fall back to a plain View so the app never crashes on import.
+let MotiViewSafe: React.ComponentType<any>;
+try {
+  MotiViewSafe = require('moti').MotiView;
+} catch {
+  MotiViewSafe = ({ children }: { children: React.ReactNode }) => <View>{children}</View>;
+}
 
 interface Props {
   message: ChatMessage;
@@ -52,13 +60,13 @@ export function ChatBubble({ message, animated = true }: Props) {
       ) : null}
 
       {animated ? (
-        <MotiView
+        <MotiViewSafe
           from={{ opacity: 0, translateY: 12, scale: 0.97 }}
           animate={{ opacity: 1, translateY: 0, scale: 1 }}
           transition={{ type: 'timing', duration: 220 }}
         >
           {bubble}
-        </MotiView>
+        </MotiViewSafe>
       ) : (
         bubble
       )}

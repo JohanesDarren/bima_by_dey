@@ -24,8 +24,9 @@ try {
   const { Text, View } = require('react-native');
   App = function FallbackApp() {
     return React.createElement(View,
-      { style: { flex: 1, justifyContent: 'center', alignItems: 'center' } },
-      React.createElement(Text, null, 'App gagal dimuat. Restart aplikasi.')
+      { style: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 } },
+      React.createElement(Text, { style: { color: 'red', textAlign: 'center', marginBottom: 10 } }, 'App gagal dimuat:'),
+      React.createElement(Text, { style: { textAlign: 'center' } }, String(e?.message || e))
     );
   };
 }

@@ -60,17 +60,33 @@ function createWebBackend(): StorageBackend {
   };
 }
 
+function createMemoryBackend(): StorageBackend {
+  const mem = new Map<string, string>();
+  console.warn('[storage] Using in-memory fallback (data will not persist across restarts).');
+  return {
+    getString: (key) => mem.get(key),
+    set: (key, value) => { mem.set(key, String(value)); },
+    delete: (key) => { mem.delete(key); },
+    clearAll: () => { mem.clear(); },
+  };
+}
+
 function createNativeBackend(): StorageBackend {
   // Lazy require so bundling on web never pulls in the native MMKV module.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { MMKV } = require('react-native-mmkv') as typeof import('react-native-mmkv');
-  const storage = new MMKV({ id: 'bima-by-dey' });
-  return {
-    getString: (key) => storage.getString(key),
-    set: (key, value) => storage.set(key, value),
-    delete: (key) => storage.delete(key),
-    clearAll: () => storage.clearAll(),
-  };
+  try {
+    const { MMKV } = require('react-native-mmkv') as typeof import('react-native-mmkv');
+    const storage = new MMKV({ id: 'bima-by-dey' });
+    return {
+      getString: (key) => storage.getString(key),
+      set: (key, value) => storage.set(key, value),
+      delete: (key) => storage.delete(key),
+      clearAll: () => storage.clearAll(),
+    };
+  } catch (e) {
+    console.warn('[storage] MMKV unavailable (JSI/New Architecture not supported), falling back to memory store:', e);
+    return createMemoryBackend();
+  }
 }
 
 const backend: StorageBackend = isWeb ? createWebBackend() : createNativeBackend();
