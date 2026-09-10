@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View, Dimensions } from 'react-native';
+import { ActivityIndicator, Dimensions, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Mic, X, Loader2, Volume2, AlertCircle } from '@tamagui/lucide-icons';
+import { Feather } from '@expo/vector-icons';
 import { colors, radius, spacing } from '../theme';
 import { useVoiceCall, VoiceCallState } from '../hooks/useVoiceCall';
 import type { Segment } from '../types';
@@ -39,7 +39,7 @@ export function VoiceCallModal({ visible, onClose, segment }: Props) {
     if (state === 'error') {
       return (
         <View style={[styles.orb, { backgroundColor: colors.error + '20' }]}>
-          <AlertCircle color={colors.error} size={48} />
+          <Feather name="alert-circle" color={colors.error} size={48} />
         </View>
       );
     }
@@ -47,7 +47,7 @@ export function VoiceCallModal({ visible, onClose, segment }: Props) {
     if (state === 'idle') {
       return (
         <View style={[styles.orb, { backgroundColor: colors.disabled }]}>
-          <Mic color={colors.textLight} size={48} />
+          <Feather name="mic" color={colors.textLight} size={48} />
         </View>
       );
     }
@@ -78,11 +78,11 @@ export function VoiceCallModal({ visible, onClose, segment }: Props) {
         ]}
       >
         {state === 'thinking' ? (
-          <Loader2 color="#fff" size={48} />
+          <ActivityIndicator color="#fff" size="large" />
         ) : state === 'speaking' ? (
-          <Volume2 color="#fff" size={48} />
+          <Feather name="volume-2" color="#fff" size={48} />
         ) : (
-          <Mic color="#fff" size={48} />
+          <Feather name="mic" color="#fff" size={48} />
         )}
       </MotiViewSafe>
     );
@@ -99,7 +99,7 @@ export function VoiceCallModal({ visible, onClose, segment }: Props) {
       <BlurView intensity={80} tint="dark" style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-            <X color="#fff" size={24} />
+            <Feather name="x" color="#fff" size={24} />
           </TouchableOpacity>
         </View>
 
