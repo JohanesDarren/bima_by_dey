@@ -1,6 +1,5 @@
 import React from 'react';
 import { registerRootComponent } from 'expo';
-import 'react-native-url-polyfill/auto';
 import 'react-native-gesture-handler';
 
 // Global error handler — tangkap unhandled native/JS errors SEBELUM app crash.
