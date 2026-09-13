@@ -141,7 +141,7 @@ export function useVoiceCall(segment: Segment) {
     
     try {
       const response = await chatKroombox({
-        message: `Konteks Segment: ${JSON.stringify(segment)}. Pengguna berkata: "${text}". Jawablah dengan singkat, ramah, dan ringkas layaknya obrolan telepon (Voice Call). Jangan gunakan list, bullet point, atau format markdown. Maksimal 3 kalimat.`,
+        message: `Konteks Segment: ${JSON.stringify(segment)}. Pengguna berkata: "${text}". Jawablah HANYA berdasarkan pengetahuan RAG/resep yang tersedia dengan singkat, ramah, dan ringkas layaknya obrolan telepon (Voice Call). Jangan gunakan list, bullet point, atau format markdown. Maksimal 3 kalimat.`,
         useRag: true,
         stream: false,
       });

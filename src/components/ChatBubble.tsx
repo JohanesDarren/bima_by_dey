@@ -1,7 +1,8 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
-import { colors, radius, spacing } from '../theme';
+import { MaterialIcons } from '@expo/vector-icons';
+import { colors, radius, spacing, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 
 // Safe lazy wrapper: if moti/Reanimated fails to load (e.g. device incompatibility),
@@ -45,11 +46,18 @@ export function ChatBubble({ message, animated = true }: Props) {
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => setExpanded((v) => !v)}
-          style={styles.reasonBox}
+          style={[styles.reasonBox, elevation.sm]}
         >
           <View style={styles.reasonHeader}>
-            <Text style={styles.reasonHeaderText}>💡 Proses Meracik Resep</Text>
-            <Text style={styles.reasonChevron}>{expanded ? '▲' : '▼'}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <MaterialIcons name="lightbulb-outline" size={16} color={colors.reasoningText} />
+              <Text style={styles.reasonHeaderText}>Proses Meracik Resep</Text>
+            </View>
+            <MaterialIcons 
+              name={expanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} 
+              size={18} 
+              color={colors.reasoningText} 
+            />
           </View>
           {expanded ? (
             <View style={styles.reasonBody}>
@@ -89,18 +97,18 @@ const styles = StyleSheet.create({
   bubbleUser: {
     backgroundColor: colors.primary,
     borderTopRightRadius: radius.sm,
+    ...elevation.sm,
   },
   bubbleAssistant: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: 0,
+    ...elevation.md,
   },
   userText: { color: colors.textOnPrimary, fontSize: 16, lineHeight: 22 },
   reasonBox: {
     backgroundColor: colors.reasoningBg,
-    borderWidth: 1,
-    borderColor: colors.reasoningBorder,
+    borderWidth: 0,
     borderRadius: radius.md,
     padding: spacing.md,
     marginBottom: spacing.sm,
@@ -116,7 +124,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
-  reasonChevron: { color: colors.reasoningText },
   reasonBody: { marginTop: spacing.sm },
   reasonText: { color: colors.reasoningText, fontSize: 13, lineHeight: 19 },
 });

@@ -9,7 +9,8 @@ import {
   View,
 } from 'react-native';
 import * as Speech from 'expo-speech';
-import { colors, radius, spacing, typography } from '../theme';
+import { MaterialIcons } from '@expo/vector-icons';
+import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/kroombox';
 
@@ -81,7 +82,7 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
             setStreaming(false);
             setMsgs((cur) => [
               ...cur,
-              { role: 'assistant', content: `⚠️ ${e.message}`, reasoning_content: null },
+              { role: 'assistant', content: `Error: ${e.message}`, reasoning_content: null },
             ]);
           },
         },
@@ -92,12 +93,20 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
   );
 
   return (
-    <View style={[styles.panel, compact && styles.panelCompact]}>
+    <View style={[styles.panel, compact && styles.panelCompact, elevation.md]}>
       <View style={styles.header}>
-        <Text style={styles.title}>🤖 AI Menemanimu</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <MaterialIcons name="smart-toy" size={20} color={colors.primary} />
+          <Text style={styles.title}>AI Menemanimu</Text>
+        </View>
         <TouchableOpacity onPress={() => setAutoSpeak((v) => !v)} style={styles.speakToggle}>
+          <MaterialIcons 
+            name={autoSpeak ? "volume-up" : "volume-off"} 
+            size={16} 
+            color={autoSpeak ? colors.success : colors.textMuted} 
+          />
           <Text style={[styles.speakText, autoSpeak && styles.speakTextOn]}>
-            {autoSpeak ? '🔊 Suara nyala' : '🔇 Suara mati'}
+            {autoSpeak ? 'Suara nyala' : 'Suara mati'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -108,10 +117,13 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
         {msgs.length === 0 ? (
-          <Text style={styles.hint}>
-            💡 Tanya apa saja: "Bisa ganti santan dengan susu?", "Berapa lama ayam diungkep?", atau
-            tekan 🎤 dan bicara.
-          </Text>
+          <View style={styles.hintContainer}>
+            <MaterialIcons name="lightbulb-outline" size={16} color={colors.textMuted} />
+            <Text style={styles.hint}>
+              Tanya apa saja: "Bisa ganti santan dengan susu?", "Berapa lama ayam diungkep?", atau
+              ketik di bawah.
+            </Text>
+          </View>
         ) : (
           msgs.map((m, i) => (
             <View
@@ -138,7 +150,7 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
           multiline
         />
         <TouchableOpacity onPress={() => send()} style={styles.sendBtn} disabled={streaming}>
-          <Text style={styles.sendText}>➤</Text>
+          <MaterialIcons name="send" size={18} color={colors.textOnPrimary} />
         </TouchableOpacity>
       </View>
     </View>
@@ -149,8 +161,7 @@ const styles = StyleSheet.create({
   panel: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: 0, // Removed border in favor of elevation
     padding: spacing.md,
     marginTop: spacing.lg,
   },
@@ -163,6 +174,9 @@ const styles = StyleSheet.create({
   },
   title: { ...typography.label, color: colors.text, fontSize: 15 },
   speakToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderRadius: radius.pill,
@@ -171,7 +185,8 @@ const styles = StyleSheet.create({
   speakText: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
   speakTextOn: { color: colors.success },
   msgs: { maxHeight: 200, marginBottom: spacing.sm },
-  hint: { color: colors.textMuted, fontSize: 13, fontStyle: 'italic', padding: spacing.xs },
+  hintContainer: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, padding: spacing.xs },
+  hint: { color: colors.textMuted, fontSize: 13, fontStyle: 'italic', flex: 1 },
   bubble: {
     borderRadius: radius.md,
     padding: spacing.sm,
@@ -203,6 +218,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    ...elevation.sm,
   },
-  sendText: { color: colors.textOnPrimary, fontSize: 16 },
 });

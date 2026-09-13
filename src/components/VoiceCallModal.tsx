@@ -88,67 +88,83 @@ export function VoiceCallModal({ visible, onClose, segment }: Props) {
     );
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={handleClose}
-      statusBarTranslucent
-    >
+    <View style={[StyleSheet.absoluteFill, { zIndex: 9999 }]}>
       <BlurView intensity={80} tint="dark" style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-            <Feather name="x" color="#fff" size={24} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.content}>
-          <Text style={styles.stateTitle}>
-            {state === 'listening' && 'Mendengarkan...'}
-            {state === 'thinking' && 'Memproses...'}
-            {state === 'speaking' && 'BIMA Berbicara...'}
-            {state === 'error' && 'Terjadi Kesalahan'}
-            {state === 'idle' && 'Voice Call Jeda'}
-          </Text>
-
-          <View style={styles.orbContainer}>{renderOrb()}</View>
-
-          <View style={styles.transcriptContainer}>
-            {state === 'error' ? (
-              <Text style={styles.errorText}>{errorMsg}</Text>
-            ) : state === 'listening' ? (
-              <Text style={styles.transcriptText}>{transcript || 'Bicara sekarang...'}</Text>
-            ) : state === 'speaking' ? (
-              <Text style={styles.aiResponseText}>{aiResponse}</Text>
-            ) : null}
+        <MotiViewSafe
+          from={{ translateY: 200, opacity: 0 }}
+          animate={{ translateY: 0, opacity: 1 }}
+          exit={{ translateY: 200, opacity: 0 }}
+          transition={{ type: 'timing', duration: 300 }}
+          style={styles.sheet}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
+              <Feather name="chevron-down" color={colors.text} size={24} />
+            </TouchableOpacity>
           </View>
-        </View>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerHint}>Voice mode mirip panggilan telepon. Lanjutkan memasak tanpa menyentuh layar.</Text>
-        </View>
+          <View style={styles.content}>
+            <Text style={styles.stateTitle}>
+              {state === 'listening' && 'Mendengarkan...'}
+              {state === 'thinking' && 'Memproses...'}
+              {state === 'speaking' && 'AI Berbicara...'}
+              {state === 'error' && 'Terjadi Kesalahan'}
+              {state === 'idle' && 'Voice Call Jeda'}
+            </Text>
+
+            <View style={styles.orbContainer}>{renderOrb()}</View>
+
+            <View style={styles.transcriptContainer}>
+              {state === 'error' ? (
+                <Text style={styles.errorText}>{errorMsg}</Text>
+              ) : state === 'listening' ? (
+                <Text style={styles.transcriptText}>{transcript || 'Bicara sekarang...'}</Text>
+              ) : state === 'speaking' ? (
+                <Text style={styles.aiResponseText}>{aiResponse}</Text>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerHint}>Voice mode mirip panggilan telepon. Lanjutkan memasak tanpa menyentuh layar.</Text>
+          </View>
+        </MotiViewSafe>
       </BlurView>
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingTop: spacing.md,
+    paddingBottom: 40,
+    minHeight: '60%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 20,
   },
   header: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    alignItems: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: spacing.md,
   },
   closeBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -159,41 +175,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
   },
   stateTitle: {
-    color: '#fff',
-    fontSize: 20,
+    color: colors.text,
+    fontSize: 18,
     fontWeight: '600',
-    marginBottom: 60,
-    opacity: 0.8,
+    marginBottom: 40,
   },
   orbContainer: {
-    height: 200,
+    height: 160,
     justifyContent: 'center',
     alignItems: 'center',
   },
   orb: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#fff',
-    shadowOffset: { width: 0, height: 0 },
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowRadius: 10,
+    elevation: 8,
   },
   transcriptContainer: {
-    marginTop: 60,
-    minHeight: 100,
+    marginTop: 40,
+    minHeight: 80,
     width: '100%',
     alignItems: 'center',
   },
   transcriptText: {
-    color: '#fff',
-    fontSize: 24,
+    color: colors.textMuted,
+    fontSize: 20,
     fontWeight: '500',
     textAlign: 'center',
-    opacity: 0.9,
   },
   aiResponseText: {
     color: colors.primary,
@@ -202,17 +216,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   errorText: {
-    color: colors.error,
+    color: colors.error || '#C0392B',
     fontSize: 18,
     textAlign: 'center',
   },
   footer: {
-    paddingBottom: 40,
     paddingHorizontal: 40,
   },
   footerHint: {
-    color: '#aaa',
-    fontSize: 14,
+    color: colors.textMuted,
+    fontSize: 13,
     textAlign: 'center',
   },
 });

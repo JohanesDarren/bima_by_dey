@@ -1,25 +1,25 @@
 /**
- * Global color palette — "sorgumcore" warm orange theme.
- * Mirrors the web-version's warm orange gradient identity.
+ * Global color palette — "sorgumcore" green/cream theme.
+ * Transitioning to a Flutter-like Material aesthetic.
  */
 export const colors = {
-  // Primary warm oranges
-  primary: '#E8732A',
-  primaryDark: '#C25A1D',
-  primaryLight: '#F5A25D',
-  gradient: ['#F7A34B', '#E8732A', '#C25A1D'] as const,
+  // Primary greens
+  primary: '#2E7D32', // Dark Green
+  primaryDark: '#1B5E20',
+  primaryLight: '#A5D6A7', // Soft Green
+  gradient: ['#A5D6A7', '#4CAF50', '#2E7D32'] as const,
 
-  // Backgrounds
-  background: '#FFF6EC',
+  // Backgrounds (Cream)
+  background: '#FDFBF7', // Cream
   surface: '#FFFFFF',
-  surfaceAlt: '#FBEFE2',
-  surfaceDark: '#2B211A',
+  surfaceAlt: '#F5F2EA',
+  surfaceDark: '#1A2E1C',
 
   // Text
-  text: '#2B211A',
-  textMuted: '#8A7A6C',
+  text: '#1F2A21',
+  textMuted: '#6B7A6E',
   textOnPrimary: '#FFFFFF',
-  textInverse: '#FDF6EF',
+  textInverse: '#FDFBF7',
 
   // Semantics
   success: '#4C9B62',
@@ -27,17 +27,23 @@ export const colors = {
   warning: '#E8A33D',
   info: '#3B82C4',
 
-  // Reasoning panel (matches web "Proses Meracik Resep" panel)
-  reasoningBg: '#FDF3E7',
-  reasoningBorder: '#EED9BE',
-  reasoningText: '#6B5A45',
+  // Reasoning panel
+  reasoningBg: '#F3F8F4',
+  reasoningBorder: '#C8E6C9',
+  reasoningText: '#385C3A',
 
   // Borders & misc
-  border: '#EFE0CE',
-  borderStrong: '#E2CDB2',
-  overlay: 'rgba(43, 33, 26, 0.55)',
+  border: '#E3E0D8',
+  borderStrong: '#C5C2BA',
+  overlay: 'rgba(31, 42, 33, 0.55)',
   white: '#FFFFFF',
   black: '#000000',
+} as const;
+
+export const elevation = {
+  sm: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 1.0, elevation: 1 },
+  md: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.23, shadowRadius: 2.62, elevation: 4 },
+  lg: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.30, shadowRadius: 4.65, elevation: 8 },
 } as const;
 
 export const spacing = {

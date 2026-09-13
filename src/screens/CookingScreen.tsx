@@ -3,12 +3,13 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Speech from 'expo-speech';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Button } from '../components/Button';
 import { AICompanion } from '../components/AICompanion';
 import { VoiceCallModal } from '../components/VoiceCallModal';
 import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
-import { colors, radius, spacing, typography } from '../theme';
+import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
 import type { RecipeStep } from '../types';
 import { saveCookHistory } from '../services/history';
@@ -53,8 +54,6 @@ export function CookingScreen({ navigation, route }: Props) {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepIdx, recipe?.name]);
-
-  // Removed old naive TTS loop here
 
   // Tick timer.
   useEffect(() => {
@@ -127,9 +126,10 @@ export function CookingScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, elevation.sm]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>← Keluar</Text>
+          <MaterialIcons name="arrow-back" size={20} color={colors.primary} />
+          <Text style={styles.backBtnText}>Keluar</Text>
         </TouchableOpacity>
         <View style={styles.headerMid}>
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -140,14 +140,15 @@ export function CookingScreen({ navigation, route }: Props) {
           </Text>
         </View>
         <TouchableOpacity style={styles.voiceCallHeaderBtn} onPress={() => setVoiceCallVisible(true)}>
-          <Text style={styles.voiceCallHeaderBtnText}>📞 Voice Call</Text>
+          <MaterialIcons name="phone-in-talk" size={16} color={colors.textOnPrimary} />
+          <Text style={styles.voiceCallHeaderBtnText}>Voice Call</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView ref={scrollRef} style={styles.flex} contentContainerStyle={styles.content}>
         {/* Step aktif */}
         {step ? (
-          <View style={styles.stepCard}>
+          <View style={[styles.stepCard, elevation.sm]}>
             <View style={styles.stepHeader}>
               <View style={styles.stepNumBig}>
                 <Text style={styles.stepNumBigText}>{step.order}</Text>
@@ -159,33 +160,43 @@ export function CookingScreen({ navigation, route }: Props) {
             {/* Timer */}
             {secondsLeft !== null ? (
               <View style={styles.timerBox}>
-                <Text style={styles.timerLabel}>
-                  {timerRunning
-                    ? '⏳ Waktu berjalan…'
-                    : secondsLeft === 0
-                      ? '✅ Waktu selesai!'
-                      : 'Waktu dijeda'}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <MaterialIcons 
+                    name={timerRunning ? "hourglass-bottom" : secondsLeft === 0 ? "check-circle" : "pause-circle-outline"} 
+                    size={16} 
+                    color={secondsLeft === 0 ? colors.success : colors.textMuted} 
+                  />
+                  <Text style={styles.timerLabel}>
+                    {timerRunning
+                      ? 'Waktu berjalan…'
+                      : secondsLeft === 0
+                        ? 'Waktu selesai!'
+                        : 'Waktu dijeda'}
+                  </Text>
+                </View>
                 <Text style={[styles.timerValue, secondsLeft === 0 && styles.timerDone]}>
                   {fmt(secondsLeft)}
                 </Text>
                 <View style={styles.timerActions}>
                   {secondsLeft === 0 ? (
                     <TouchableOpacity style={styles.resetBtn} onPress={resetTimer}>
-                      <Text style={styles.resetBtnText}>↻ Ulangi</Text>
+                      <MaterialIcons name="refresh" size={14} color={colors.text} />
+                      <Text style={styles.resetBtnText}>Ulangi</Text>
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
                       style={styles.resetBtn}
                       onPress={() => setTimerRunning((r) => !r)}
                     >
+                      <MaterialIcons name={timerRunning ? "pause" : "play-arrow"} size={14} color={colors.text} />
                       <Text style={styles.resetBtnText}>
-                        {timerRunning ? '⏸ Jeda' : '▶ Lanjut'}
+                        {timerRunning ? 'Jeda' : 'Lanjut'}
                       </Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={styles.resetBtn} onPress={resetTimer}>
-                    <Text style={styles.resetBtnText}>↻ Reset {step.durationMinutes}m</Text>
+                    <MaterialIcons name="restore" size={14} color={colors.text} />
+                    <Text style={styles.resetBtnText}>Reset {step.durationMinutes}m</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -194,17 +205,19 @@ export function CookingScreen({ navigation, route }: Props) {
             {/* Aksi */}
             <View style={styles.actionRow}>
               <TouchableOpacity style={styles.voiceBtn} onPress={speakNow}>
-                <Text style={styles.voiceBtnText}>🔊 Bacakan</Text>
+                <MaterialIcons name="volume-up" size={18} color={colors.text} />
+                <Text style={styles.voiceBtnText}>Bacakan</Text>
               </TouchableOpacity>
               <Button
-                title={isLast ? 'Selesai 🎉' : 'Selesai — Lanjut ›'}
+                title={isLast ? 'Selesai' : 'Selesai — Lanjut'}
                 onPress={goNext}
                 style={styles.nextBtn}
               />
             </View>
             <TouchableOpacity onPress={() => setVoiceCallVisible(true)} style={styles.voiceToggleRow}>
               <View style={styles.voiceCallBanner}>
-                <Text style={styles.voiceCallBannerText}>📞 Mode Voice Call (Hands-free)</Text>
+                <MaterialIcons name="headset-mic" size={18} color={colors.primary} />
+                <Text style={styles.voiceCallBannerText}>Mode Voice Call (Hands-free)</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -224,11 +237,13 @@ export function CookingScreen({ navigation, route }: Props) {
         {isGuest ? <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text> : null}
       </ScrollView>
       
-      <VoiceCallModal 
-        visible={voiceCallVisible}
-        onClose={() => setVoiceCallVisible(false)}
-        segment={segment}
-      />
+      {voiceCallVisible ? (
+        <VoiceCallModal 
+          visible={voiceCallVisible}
+          onClose={() => setVoiceCallVisible(false)}
+          segment={segment}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
