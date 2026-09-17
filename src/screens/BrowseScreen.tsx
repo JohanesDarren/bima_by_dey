@@ -31,6 +31,14 @@ const CATEGORY_FILTERS: { label: string; value: FoodCategory | null }[] = [
   { label: 'Minuman', value: 'beverage' },
 ];
 
+const SHORT_CONDITION_LABEL: Record<SpecialCondition, string> = {
+  Umum: 'Umum',
+  Bumil: 'Ibu hamil',
+  Busui: 'Ibu menyusui',
+  ABK: 'ABK',
+  'Non-ABK': 'Non-ABK',
+};
+
 export function BrowseScreen({ navigation }: Props) {
   const isGuest = useAuthStore((s) => s.isGuest);
   const segment = useFlowStore((s) => s.segment);
@@ -94,7 +102,6 @@ export function BrowseScreen({ navigation }: Props) {
             <MaterialIcons name="grain" size={28} color={colors.accent} />
           </View>
           <View style={styles.introCopy}>
-            <Text style={styles.eyebrow}>PILIH KEBUTUHAN</Text>
             <Text style={styles.title}>Hari ini masak untuk siapa?</Text>
           </View>
         </View>
@@ -122,7 +129,7 @@ export function BrowseScreen({ navigation }: Props) {
           {SPECIAL_CONDITIONS.map((item) => (
             <View key={item.value} style={styles.conditionChoice}>
               <SelectionChip
-                label={item.label}
+                label={SHORT_CONDITION_LABEL[item.value]}
                 selected={condition === item.value}
                 onPress={() => setCondition(item.value)}
                 compact
@@ -132,15 +139,14 @@ export function BrowseScreen({ navigation }: Props) {
         </View>
 
         <Button
-          title={ageGroup ? `Lihat menu untuk ${ageGroup}` : 'Pilih kelompok umur'}
+          title="Tampilkan resep"
           onPress={loadMenus}
           disabled={!segmentReady}
           style={styles.primaryAction}
         />
 
         <View style={styles.rule} />
-        <Text style={styles.eyebrow}>PENCARIAN RESEP</Text>
-        <Text style={styles.sectionTitle}>Sudah tahu mau masak apa?</Text>
+        <Text style={styles.sectionTitle}>Cari resep</Text>
         <View style={styles.searchRow}>
           <MaterialIcons name="search" size={20} color={colors.textMuted} />
           <TextInput
@@ -193,18 +199,9 @@ export function BrowseScreen({ navigation }: Props) {
           })}
         </ScrollView>
 
-        <View style={styles.resultHeader}>
-          <View style={styles.resultHeaderCopy}>
-            <Text style={styles.eyebrow}>{searchMode ? 'HASIL PENCARIAN' : 'MENU ANDALAN'}</Text>
-            <Text style={styles.sectionTitle}>
-              {ageGroup ? `Pilihan untuk ${ageGroup}` : 'Pilihan untuk keluargamu'}
-            </Text>
-            <Text style={styles.sectionNote}>
-              Saran AI perlu disesuaikan lagi dengan alergi dan kebutuhan kesehatan.
-            </Text>
-          </View>
-          {menus.length > 0 ? <Text style={styles.count}>{menus.length}</Text> : null}
-        </View>
+        {menus.length > 0 || loadingMenus || menusError ? (
+          <View style={styles.resultDivider} />
+        ) : null}
 
         {loadingMenus ? (
           <View style={styles.stateBox} accessibilityLiveRegion="polite">
@@ -219,7 +216,7 @@ export function BrowseScreen({ navigation }: Props) {
             <MaterialIcons name="cloud-off" size={24} color={colors.danger} />
             <View style={styles.errorCopy}>
               <Text style={styles.errorTitle}>Menu belum bisa dimuat</Text>
-              <Text style={styles.stateText}>{menusError}. Periksa koneksi, lalu coba lagi.</Text>
+              <Text style={styles.stateText}>{menusError}</Text>
             </View>
             <Pressable
               accessibilityRole="button"
@@ -244,7 +241,7 @@ export function BrowseScreen({ navigation }: Props) {
           <View style={styles.emptyBox}>
             <MaterialIcons name="menu-book" size={30} color={colors.accent} />
             <Text style={styles.stateTitle}>Belum ada menu</Text>
-            <Text style={styles.stateText}>Pilih profil, lalu tampilkan menu andalan.</Text>
+            <Text style={styles.stateText}>Pilih kebutuhan, lalu tampilkan resep.</Text>
           </View>
         )}
 
@@ -309,13 +306,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   horizontalList: { gap: spacing.sm, paddingRight: spacing.xl },
-  ageChoice: { width: 128 },
+  ageChoice: { width: 148 },
   conditionGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 },
   conditionChoice: { width: '50%', paddingHorizontal: 4 },
   primaryAction: { marginTop: spacing.lg, backgroundColor: colors.primary },
   rule: { height: 1, backgroundColor: colors.border, marginVertical: spacing.xxl },
   sectionTitle: { ...typography.h2, color: colors.text, marginTop: 4 },
-  sectionNote: { ...typography.caption, color: colors.textMuted, marginTop: 5, maxWidth: 310 },
+  resultDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.lg },
   searchRow: {
     minHeight: 54,
     marginTop: spacing.md,
@@ -357,24 +354,7 @@ const styles = StyleSheet.create({
   categoryText: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
   categoryTextSelected: { color: colors.textOnPrimary },
   pressed: { opacity: 0.7 },
-  resultHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    marginTop: spacing.xl,
-    marginBottom: spacing.md,
-  },
-  resultHeaderCopy: { flex: 1 },
-  count: {
-    minWidth: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.accent,
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    color: colors.primaryDark,
-    fontWeight: '900',
-  },
+
   menuList: { marginTop: spacing.sm },
   stateBox: {
     alignItems: 'center',

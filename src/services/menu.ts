@@ -1,5 +1,6 @@
 import { chatKroombox, extractJson, extractJsonArray } from './kroombox';
 import type { FoodCategory, MenuItem, Recipe, RecipeRequest, Segment } from '../types';
+import { FALLBACK_MENUS, getFallbackRecipe } from './fallbackRecipes';
 
 const CATEGORY_LABEL: Record<FoodCategory, string> = {
   main_course: 'main course (makanan utama)',
@@ -113,11 +114,11 @@ export async function getRecommendedMenus(seg: Segment, count = 5): Promise<Menu
       if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
       const parsed = extractJsonArray<MenuItem>(raw);
       if (parsed) return normMenu(parsed);
-    } catch (e) {
-      if (attempt === 2) throw e;
+    } catch {
+      // API may be temporarily unavailable; fall back after retries.
     }
   }
-  throw new Error('data dokumen tidak ditemukan');
+  return FALLBACK_MENUS.slice(0, count);
 }
 
 /**
@@ -126,34 +127,23 @@ export async function getRecommendedMenus(seg: Segment, count = 5): Promise<Menu
 export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe> {
   let raw = '';
   for (let attempt = 0; attempt < 3; attempt++) {
-    const r = await chatKroombox({
-      message: promptRecipe(menuName, seg),
-      useRag: true,
-      stream: false,
-    });
-    if (r.trim() && !/tidak ada teks|maaf/i.test(r.slice(0, 120))) {
-      raw = r;
-      break;
+    try {
+      const r = await chatKroombox({
+        message: promptRecipe(menuName, seg),
+        useRag: true,
+        stream: false,
+      });
+      if (r.trim() && !/tidak ada teks|maaf/i.test(r.slice(0, 120))) {
+        raw = r;
+        break;
+      }
+    } catch {
+      if (attempt === 2) return getFallbackRecipe(menuName);
     }
   }
   const parsed = extractJson<Recipe>(raw);
   if (!parsed || !Array.isArray(parsed.steps) || parsed.steps.length === 0) {
-    const cleanText = raw.trim().replace(/^```(?:json)?|```$/g, '');
-    return {
-      name: menuName,
-      servings: 1,
-      ingredients: [],
-      steps: [
-        {
-          order: 1,
-          title: 'Petunjuk',
-          instruction:
-            cleanText || 'Maaf, AI belum memberikan resep. Silakan coba lagi dari daftar menu.',
-          durationMinutes: null,
-        },
-      ],
-      totalMinutes: 0,
-    };
+    return getFallbackRecipe(menuName);
   }
   return parsed;
 }
@@ -172,9 +162,14 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
       if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
       const parsed = extractJsonArray<MenuItem>(raw);
       if (parsed) return normMenu(parsed);
-    } catch (e) {
-      if (attempt === 2) throw e;
+    } catch {
+      // API may be temporarily unavailable; fall back after retries.
     }
   }
-  throw new Error('data dokumen tidak ditemukan');
+  const query = (req.query ?? '').trim().toLowerCase();
+  return FALLBACK_MENUS.filter((menu) => {
+    const categoryMatches = !req.category || menu.category === req.category;
+    const queryMatches = !query || `${menu.name} ${menu.description}`.toLowerCase().includes(query);
+    return categoryMatches && queryMatches;
+  });
 }

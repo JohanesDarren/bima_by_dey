@@ -49,7 +49,7 @@ export function SelectionChip({ label, selected, onPress, compact = false }: Pro
 
 const styles = StyleSheet.create({
   chip: {
-    minHeight: 48,
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     marginVertical: spacing.xs,
   },
-  compact: { minHeight: 44, paddingVertical: 7 },
+  compact: { height: 52, paddingVertical: 7 },
   selected: { backgroundColor: colors.primary, borderColor: colors.accent },
   pressed: { opacity: 0.78 },
   icon: {
