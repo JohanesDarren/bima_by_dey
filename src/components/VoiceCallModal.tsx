@@ -78,14 +78,6 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
       <SafeAreaView style={styles.safe}>
         <View style={styles.topBar}>
           <Text style={styles.brand}>sorgumcore</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Tutup panggilan"
-            onPress={close}
-            style={styles.closeButton}
-          >
-            <MaterialIcons name="keyboard-arrow-down" size={27} color={colors.text} />
-          </Pressable>
         </View>
 
         <View style={styles.contextCard}>
@@ -99,7 +91,6 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
             </Text>
             {stepLabel ? <Text style={styles.contextMeta}>{stepLabel}</Text> : null}
           </View>
-          <MaterialIcons name="chevron-right" size={20} color={colors.accent} />
         </View>
 
         <View style={styles.modeToggle} accessibilityRole="tablist">
@@ -199,23 +190,12 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   topBar: {
-    minHeight: 70,
+    minHeight: 62,
     paddingHorizontal: spacing.xl,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    flexDirection: 'row',
   },
   brand: { ...typography.h3, fontSize: 22, color: colors.primary },
-  closeButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   contextCard: {
     marginHorizontal: spacing.xl,
     marginTop: spacing.md,

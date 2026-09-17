@@ -225,15 +225,6 @@ export function CookingScreen({ navigation, route }: Props) {
                 style={styles.nextBtn}
               />
             </View>
-            <TouchableOpacity
-              onPress={() => setVoiceCallVisible(true)}
-              style={styles.voiceToggleRow}
-            >
-              <View style={styles.voiceCallBanner}>
-                <MaterialIcons name="headset-mic" size={18} color={colors.primary} />
-                <Text style={styles.voiceCallBannerText}>Mode Voice Call (Hands-free)</Text>
-              </View>
-            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -352,16 +343,7 @@ const styles = StyleSheet.create({
   },
   voiceBtnText: { color: colors.text, fontWeight: '700', fontSize: 13 },
   nextBtn: { flex: 1 },
-  voiceToggleRow: { marginTop: spacing.md, alignSelf: 'stretch' },
-  voiceCallBanner: {
-    backgroundColor: colors.primary + '15',
-    borderColor: colors.primary + '40',
-    borderWidth: 1,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    alignItems: 'center',
-  },
-  voiceCallBannerText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
+
   chatPanel: {
     marginTop: spacing.lg,
     backgroundColor: colors.surface,
