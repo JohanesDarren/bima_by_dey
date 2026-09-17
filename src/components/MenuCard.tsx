@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   },
   category: {
     ...typography.label,
-    color: colors.accentDark,
+    color: colors.accent,
     textTransform: 'uppercase',
     fontSize: 10,
   },

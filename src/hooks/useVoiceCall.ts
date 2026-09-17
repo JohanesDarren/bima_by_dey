@@ -112,6 +112,16 @@ export function useVoiceCall(segment: Segment) {
 
     try {
       const permission = await speechModule.requestPermissionsAsync();
+      // The user may close the modal while Android's permission dialog is open.
+      // Never attach listeners or restart capture for a closed call.
+      if (!activeRef.current) {
+        try {
+          speechModule.abort();
+        } catch {
+          // Recognizer may not have started yet.
+        }
+        return;
+      }
       if (!permission.granted) {
         setErrorMsg('Izin mikrofon ditolak. Aktifkan izin mikrofon di pengaturan HP.');
         setState('error');
@@ -129,6 +139,8 @@ export function useVoiceCall(segment: Segment) {
           const text = event.results[0]?.transcript ?? '';
           setTranscript(text);
           if (event.isFinal && text.trim()) {
+            // Set this before stop(): native `end` may fire immediately.
+            processingRef.current = true;
             speechModule.stop();
             processUtterance(text.trim()).catch(() => undefined);
           }
