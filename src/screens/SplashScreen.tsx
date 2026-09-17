@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
-import { View } from 'react-native';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import { AppGradient } from '../components/AppGradient';
 import { colors } from '../theme';
 
 // Safe lazy wrapper: if moti/Reanimated fails to load, fall back to plain View.
-let MotiViewSafe: React.ComponentType<any>;
+type MotionProps = {
+  children: React.ReactNode;
+  from?: object;
+  animate?: object;
+  transition?: object;
+};
+let MotiViewSafe: React.ComponentType<MotionProps>;
 try {
   MotiViewSafe = require('moti').MotiView;
 } catch {

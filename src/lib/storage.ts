@@ -65,9 +65,15 @@ function createMemoryBackend(): StorageBackend {
   console.warn('[storage] Using in-memory fallback (data will not persist across restarts).');
   return {
     getString: (key) => mem.get(key),
-    set: (key, value) => { mem.set(key, String(value)); },
-    delete: (key) => { mem.delete(key); },
-    clearAll: () => { mem.clear(); },
+    set: (key, value) => {
+      mem.set(key, String(value));
+    },
+    delete: (key) => {
+      mem.delete(key);
+    },
+    clearAll: () => {
+      mem.clear();
+    },
   };
 }
 
@@ -84,7 +90,10 @@ function createNativeBackend(): StorageBackend {
       clearAll: () => storage.clearAll(),
     };
   } catch (e) {
-    console.warn('[storage] MMKV unavailable (JSI/New Architecture not supported), falling back to memory store:', e);
+    console.warn(
+      '[storage] MMKV unavailable (JSI/New Architecture not supported), falling back to memory store:',
+      e,
+    );
     return createMemoryBackend();
   }
 }

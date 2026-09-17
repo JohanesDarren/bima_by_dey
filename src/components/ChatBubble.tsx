@@ -7,7 +7,13 @@ import type { ChatMessage } from '../types';
 
 // Safe lazy wrapper: if moti/Reanimated fails to load (e.g. device incompatibility),
 // fall back to a plain View so the app never crashes on import.
-let MotiViewSafe: React.ComponentType<any>;
+type MotionProps = {
+  children: React.ReactNode;
+  from?: object;
+  animate?: object;
+  transition?: object;
+};
+let MotiViewSafe: React.ComponentType<MotionProps>;
 try {
   MotiViewSafe = require('moti').MotiView;
 } catch {
@@ -53,10 +59,10 @@ export function ChatBubble({ message, animated = true }: Props) {
               <MaterialIcons name="lightbulb-outline" size={16} color={colors.reasoningText} />
               <Text style={styles.reasonHeaderText}>Proses Meracik Resep</Text>
             </View>
-            <MaterialIcons 
-              name={expanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} 
-              size={18} 
-              color={colors.reasoningText} 
+            <MaterialIcons
+              name={expanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+              size={18}
+              color={colors.reasoningText}
             />
           </View>
           {expanded ? (

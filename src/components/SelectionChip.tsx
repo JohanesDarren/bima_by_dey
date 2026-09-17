@@ -1,24 +1,47 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { radius, colors, spacing } from '../theme';
 
 interface Props {
   label: string;
   selected: boolean;
-  emoji: string;
+  emoji?: string;
   onPress: () => void;
+  compact?: boolean;
 }
 
-/** Selectable chip/radio card for Age Group & Special Condition pickers. */
-export function SelectionChip({ label, selected, emoji, onPress }: Props) {
+const iconFor = (label: string): keyof typeof MaterialIcons.glyphMap => {
+  if (/balita/i.test(label)) return 'child-care';
+  if (/anak|ABK/i.test(label)) return 'school';
+  if (/remaja/i.test(label)) return 'face';
+  if (/lansia/i.test(label)) return 'elderly';
+  if (/hamil|menyusui|busui|bumil/i.test(label)) return 'favorite-border';
+  if (/umum|dewasa|non/i.test(label)) return 'person-outline';
+  return 'restaurant';
+};
+
+export function SelectionChip({ label, selected, onPress, compact = false }: Props) {
   return (
     <Pressable
       accessibilityRole="radio"
+      accessibilityLabel={label}
       accessibilityState={{ selected }}
       onPress={onPress}
-      style={({ pressed }) => [styles.chip, selected && styles.selected, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.chip,
+        compact && styles.compact,
+        selected && styles.selected,
+        pressed && styles.pressed,
+      ]}
     >
-      <Text style={styles.emoji}>{emoji}</Text>
+      <View style={[styles.icon, selected && styles.iconSelected]}>
+        <MaterialIcons
+          name={selected ? 'check' : iconFor(label)}
+          size={17}
+          color={selected ? colors.primaryDark : colors.primary}
+        />
+      </View>
       <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
     </Pressable>
   );
@@ -26,28 +49,30 @@ export function SelectionChip({ label, selected, emoji, onPress }: Props) {
 
 const styles = StyleSheet.create({
   chip: {
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    borderWidth: 1.5,
-    borderColor: colors.borderStrong,
+    borderWidth: 1,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    paddingVertical: 9,
+    paddingHorizontal: spacing.md,
     marginVertical: spacing.xs,
-    minHeight: 44,
-    minWidth: 44,
   },
-  pressed: {
-    transform: [{ scale: 0.97 }],
-    backgroundColor: colors.surfaceAlt,
+  compact: { minHeight: 44, paddingVertical: 7 },
+  selected: { backgroundColor: colors.primary, borderColor: colors.accent },
+  pressed: { opacity: 0.78 },
+  icon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  selected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primaryDark,
-  },
-  emoji: { fontSize: 18 },
-  label: { fontSize: 15, color: colors.text, fontWeight: '600' },
+  iconSelected: { backgroundColor: colors.accent },
+  label: { flexShrink: 1, fontSize: 14, color: colors.text, fontWeight: '700' },
   labelSelected: { color: colors.textOnPrimary },
 });

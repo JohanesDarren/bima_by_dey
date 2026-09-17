@@ -5,168 +5,198 @@ import type { MenuItem } from '../types';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 
 const CATEGORY_LABEL: Record<string, string> = {
-  main_course: 'Makanan Utama',
-  soup: 'Soup',
-  dessert: 'Dessert',
+  main_course: 'Makanan utama',
+  soup: 'Berkuah',
+  dessert: 'Hidangan manis',
   snack: 'Kudapan',
   beverage: 'Minuman',
-  other: 'Lainnya',
+  other: 'Olahan sorgum',
 };
-
 const CATEGORY_ICON: Record<string, keyof typeof MaterialIcons.glyphMap> = {
   main_course: 'restaurant',
-  soup: 'local-dining',
+  soup: 'soup-kitchen',
   dessert: 'cake',
-  snack: 'fastfood',
+  snack: 'bakery-dining',
   beverage: 'local-cafe',
-  other: 'star',
+  other: 'grain',
 };
 
 interface Props {
   menu: MenuItem;
   onPress: () => void;
+  featured?: boolean;
 }
 
-/** Kartu menu andalan: deskripsi + gizi + keunggulan/kelemahan (expandable). */
-export function MenuCard({ menu, onPress }: Props) {
+export function MenuCard({ menu, onPress, featured = false }: Props) {
   const [open, setOpen] = useState(false);
-  const nutritionEntries = Object.entries(menu.nutrition ?? {});
+  const nutritionEntries = Object.entries(menu.nutrition ?? {}).slice(0, 3);
+  const icon = CATEGORY_ICON[menu.category] ?? 'grain';
 
   return (
-    <Pressable
-      onPress={() => {
-        onPress();
-        setOpen(false);
-      }}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed, elevation.sm]}
-    >
-      <View style={styles.header}>
-        <Text style={styles.title}>{menu.name}</Text>
-        <View style={styles.catContainer}>
-          <MaterialIcons 
-            name={CATEGORY_ICON[menu.category] || 'star'} 
-            size={14} 
-            color={colors.primary} 
-          />
-          <Text style={styles.cat}>{CATEGORY_LABEL[menu.category] ?? menu.category}</Text>
-        </View>
-      </View>
-      <Text style={styles.desc}>{menu.description}</Text>
-
+    <View style={[styles.card, featured && styles.featured, elevation.sm]}>
       <Pressable
-        onPress={() => setOpen((v) => !v)}
-        style={styles.toggle}
-        hitSlop={8}
         accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`Buka resep ${menu.name}`}
+        onPress={onPress}
+        style={({ pressed }) => [styles.summary, pressed && styles.pressed]}
       >
-        <View style={styles.toggleContainer}>
-          <MaterialIcons 
-            name={open ? 'expand-less' : 'expand-more'} 
-            size={16} 
-            color={colors.primary} 
-          />
-          <Text style={styles.toggleText}>
-            {open ? 'Sembunyikan detail' : 'Nutrisi, keunggulan & kelemahan'}
+        <View style={[styles.art, featured && styles.artFeatured]}>
+          <MaterialIcons name={icon} size={featured ? 38 : 30} color={colors.accent} />
+        </View>
+        <View style={styles.body}>
+          <View style={styles.metaRow}>
+            <Text style={styles.category}>{CATEGORY_LABEL[menu.category] ?? 'Olahan sorgum'}</Text>
+            <MaterialIcons
+              name="arrow-forward"
+              size={17}
+              color={featured ? colors.accent : colors.primary}
+            />
+          </View>
+          <Text style={[styles.title, featured && styles.titleFeatured]} numberOfLines={2}>
+            {menu.name}
+          </Text>
+          <Text style={[styles.desc, featured && styles.descFeatured]} numberOfLines={2}>
+            {menu.description}
           </Text>
         </View>
       </Pressable>
 
-      {open ? (
-        <View style={styles.detail}>
-          {nutritionEntries.length > 0 ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Kandungan gizi</Text>
-              {nutritionEntries.map(([k, v]) => (
-                <View key={k} style={styles.bulletRow}>
-                  <MaterialIcons name="fiber-manual-record" size={8} color={colors.textMuted} />
-                  <Text style={styles.bullet}>
-                    {k.replaceAll('_', ' ')}: {v}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-          {menu.strengths?.length ? (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: colors.success }]}>Keunggulan</Text>
-              {menu.strengths.map((s, i) => (
-                <View key={i} style={styles.bulletRow}>
-                  <MaterialIcons name="check-circle" size={14} color={colors.success} />
-                  <Text style={styles.bullet}>{s}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-          {menu.weaknesses?.length ? (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: colors.warning }]}>
-                Perlu diperhatikan
+      {nutritionEntries.length > 0 ? (
+        <View style={[styles.nutritionRow, featured && styles.darkDivider]}>
+          {nutritionEntries.map(([k, v]) => (
+            <View key={k} style={styles.nutritionCell}>
+              <Text
+                style={[styles.nutritionLabel, featured && styles.mutedOnDark]}
+                numberOfLines={1}
+              >
+                {k.replaceAll('_', ' ')}
               </Text>
-              {menu.weaknesses.map((w, i) => (
-                <View key={i} style={styles.bulletRow}>
-                  <MaterialIcons name="warning" size={14} color={colors.warning} />
-                  <Text style={styles.bullet}>{w}</Text>
-                </View>
-              ))}
+              <Text
+                style={[styles.nutritionValue, featured && styles.lightOnDark]}
+                numberOfLines={1}
+              >
+                {String(v)}
+              </Text>
             </View>
-          ) : null}
-          <Pressable onPress={onPress} style={styles.openBtn} accessibilityRole="button">
-            <Text style={styles.openBtnText}>Lihat resep lengkap</Text>
-            <MaterialIcons name="arrow-forward" size={16} color={colors.textOnPrimary} />
+          ))}
+        </View>
+      ) : null}
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((value) => !value)}
+        style={({ pressed }) => [styles.detailToggle, pressed && styles.pressed]}
+      >
+        <Text style={[styles.detailToggleText, featured && styles.accentText]}>
+          {open ? 'Tutup catatan' : 'Kelebihan & perhatian'}
+        </Text>
+        <MaterialIcons
+          name={open ? 'expand-less' : 'expand-more'}
+          size={19}
+          color={featured ? colors.accent : colors.primary}
+        />
+      </Pressable>
+
+      {open ? (
+        <View style={[styles.details, featured && styles.darkDivider]}>
+          {menu.strengths.slice(0, 2).map((item, index) => (
+            <View key={`s-${index}`} style={styles.noteRow}>
+              <MaterialIcons name="check-circle" size={16} color={colors.success} />
+              <Text style={[styles.note, featured && styles.lightOnDark]}>{item}</Text>
+            </View>
+          ))}
+          {menu.weaknesses.slice(0, 2).map((item, index) => (
+            <View key={`w-${index}`} style={styles.noteRow}>
+              <MaterialIcons name="info-outline" size={16} color={colors.accent} />
+              <Text style={[styles.note, featured && styles.lightOnDark]}>{item}</Text>
+            </View>
+          ))}
+          <Pressable onPress={onPress} style={styles.openButton} accessibilityRole="button">
+            <Text style={styles.openButtonText}>Lihat resep</Text>
+            <MaterialIcons name="arrow-forward" size={17} color={colors.primaryDark} />
           </Pressable>
         </View>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
+    borderRadius: radius.xl,
     marginBottom: spacing.md,
-    borderWidth: 0,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  cardPressed: { transform: [{ scale: 0.99 }], opacity: 0.95 },
-  header: {
-    flexDirection: 'column',
-    justifyContent: 'flex-start',
-    alignItems: 'flex-start',
-    gap: spacing.xs,
-  },
-  title: { ...typography.h3, color: colors.text, flexShrink: 1 },
-  catContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  cat: { fontSize: 11, color: colors.primary, fontWeight: '700', textTransform: 'uppercase' },
-  desc: { ...typography.bodySm, color: colors.textMuted, marginTop: spacing.sm },
-  toggle: { marginTop: spacing.md },
-  toggleContainer: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  toggleText: { color: colors.primary, fontWeight: '600', fontSize: 13 },
-  detail: {
-    marginTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.md,
-  },
-  section: { marginBottom: spacing.md },
-  sectionTitle: { ...typography.label, color: colors.text, marginBottom: spacing.xs },
-  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginBottom: 4, marginTop: 2 },
-  bullet: { ...typography.bodySm, color: colors.text, flex: 1 },
-  openBtn: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.md,
-    flexDirection: 'row',
+  featured: { backgroundColor: colors.surfaceDark, borderColor: colors.surfaceDarkAlt },
+  summary: { flexDirection: 'row', gap: spacing.md, padding: spacing.md, minHeight: 112 },
+  pressed: { opacity: 0.72 },
+  art: {
+    width: 78,
+    minHeight: 82,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    ...elevation.sm,
   },
-  openBtnText: { color: colors.textOnPrimary, fontWeight: '700', fontSize: 14 },
+  artFeatured: { width: 92, backgroundColor: colors.primaryDark },
+  body: { flex: 1, minWidth: 0 },
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  category: {
+    ...typography.label,
+    color: colors.accentDark,
+    textTransform: 'uppercase',
+    fontSize: 10,
+  },
+  title: { ...typography.h3, color: colors.text, marginTop: 5 },
+  titleFeatured: { color: colors.textOnPrimary },
+  desc: { ...typography.caption, color: colors.textMuted, marginTop: 5 },
+  descFeatured: { color: '#B8C5BB' },
+  nutritionRow: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  darkDivider: { borderTopColor: colors.surfaceDarkAlt },
+  nutritionCell: { flex: 1, minWidth: 0 },
+  nutritionLabel: { fontSize: 9, color: colors.textMuted, textTransform: 'capitalize' },
+  nutritionValue: { fontSize: 11, color: colors.text, fontWeight: '800', marginTop: 2 },
+  mutedOnDark: { color: '#AAB9AE' },
+  lightOnDark: { color: colors.textOnPrimary },
+  detailToggle: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128,128,128,0.15)',
+  },
+  detailToggleText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
+  accentText: { color: colors.accent },
+  details: { padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  noteRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', marginBottom: 7 },
+  note: { ...typography.bodySm, flex: 1, color: colors.text },
+  openButton: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    marginTop: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  openButtonText: { color: colors.primaryDark, fontWeight: '800' },
 });

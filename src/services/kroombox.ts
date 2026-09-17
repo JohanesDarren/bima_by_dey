@@ -170,7 +170,7 @@ export async function chatKroombox(req: StreamRequest): Promise<string> {
     }
     const data = (await res.json()) as ChatResponse;
     return data.response ?? '';
-  } catch (error) {
+  } catch {
     throw new KroomboxError('data dokumen tidak ditemukan');
   }
 }

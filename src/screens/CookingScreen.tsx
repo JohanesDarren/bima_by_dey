@@ -139,7 +139,10 @@ export function CookingScreen({ navigation, route }: Props) {
             Langkah {stepIdx + 1} dari {steps.length}
           </Text>
         </View>
-        <TouchableOpacity style={styles.voiceCallHeaderBtn} onPress={() => setVoiceCallVisible(true)}>
+        <TouchableOpacity
+          style={styles.voiceCallHeaderBtn}
+          onPress={() => setVoiceCallVisible(true)}
+        >
           <MaterialIcons name="phone-in-talk" size={16} color={colors.textOnPrimary} />
           <Text style={styles.voiceCallHeaderBtnText}>Voice Call</Text>
         </TouchableOpacity>
@@ -161,10 +164,16 @@ export function CookingScreen({ navigation, route }: Props) {
             {secondsLeft !== null ? (
               <View style={styles.timerBox}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <MaterialIcons 
-                    name={timerRunning ? "hourglass-bottom" : secondsLeft === 0 ? "check-circle" : "pause-circle-outline"} 
-                    size={16} 
-                    color={secondsLeft === 0 ? colors.success : colors.textMuted} 
+                  <MaterialIcons
+                    name={
+                      timerRunning
+                        ? 'hourglass-bottom'
+                        : secondsLeft === 0
+                          ? 'check-circle'
+                          : 'pause-circle-outline'
+                    }
+                    size={16}
+                    color={secondsLeft === 0 ? colors.success : colors.textMuted}
                   />
                   <Text style={styles.timerLabel}>
                     {timerRunning
@@ -188,10 +197,12 @@ export function CookingScreen({ navigation, route }: Props) {
                       style={styles.resetBtn}
                       onPress={() => setTimerRunning((r) => !r)}
                     >
-                      <MaterialIcons name={timerRunning ? "pause" : "play-arrow"} size={14} color={colors.text} />
-                      <Text style={styles.resetBtnText}>
-                        {timerRunning ? 'Jeda' : 'Lanjut'}
-                      </Text>
+                      <MaterialIcons
+                        name={timerRunning ? 'pause' : 'play-arrow'}
+                        size={14}
+                        color={colors.text}
+                      />
+                      <Text style={styles.resetBtnText}>{timerRunning ? 'Jeda' : 'Lanjut'}</Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={styles.resetBtn} onPress={resetTimer}>
@@ -214,7 +225,10 @@ export function CookingScreen({ navigation, route }: Props) {
                 style={styles.nextBtn}
               />
             </View>
-            <TouchableOpacity onPress={() => setVoiceCallVisible(true)} style={styles.voiceToggleRow}>
+            <TouchableOpacity
+              onPress={() => setVoiceCallVisible(true)}
+              style={styles.voiceToggleRow}
+            >
               <View style={styles.voiceCallBanner}>
                 <MaterialIcons name="headset-mic" size={18} color={colors.primary} />
                 <Text style={styles.voiceCallBannerText}>Mode Voice Call (Hands-free)</Text>
@@ -236,12 +250,14 @@ export function CookingScreen({ navigation, route }: Props) {
 
         {isGuest ? <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text> : null}
       </ScrollView>
-      
+
       {voiceCallVisible ? (
-        <VoiceCallModal 
+        <VoiceCallModal
           visible={voiceCallVisible}
           onClose={() => setVoiceCallVisible(false)}
           segment={segment}
+          recipeName={recipe.name}
+          stepLabel={`Langkah ${stepIdx + 1} dari ${steps.length}`}
         />
       ) : null}
     </SafeAreaView>

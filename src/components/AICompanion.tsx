@@ -1,11 +1,12 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import * as Speech from 'expo-speech';
@@ -15,28 +16,30 @@ import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/kroombox';
 
 interface Props {
-  /** Konteks yang disuntikkan ke AI (resep / langkah aktif). */
   context: string;
-  /** Placeholder input chat. */
   placeholder?: string;
-  /** Sembunyikan tombol mic (misal di web yg tak support STT). */
   compact?: boolean;
-  /** Dipanggil tiap AI selesai menjawab (utk catatan riwayat). */
   onAssistantMessage?: (text: string) => void;
 }
 
-/**
- * Panel "AI menemani" — chat + voice dua arah.
- * - User ketik ATAU bicara (mic → STT).
- * - AI jawab teks + otomatis dibacakan (TTS) bila `autoSpeak` aktif.
- * Dipakai di RecipeDetail (sebelum masak) & CookingScreen (saat masak).
- */
+const SUGGESTIONS = ['Pengganti bahan?', 'Ubah jumlah porsi?', 'Jelaskan langkah ini'];
+
 export function AICompanion({ context, placeholder, compact, onAssistantMessage }: Props) {
-  const [msgs, setMsgs] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(true);
+  const [lastQuestion, setLastQuestion] = useState('');
   const scrollRef = useRef<ScrollView>(null);
+  const streamRef = useRef<{ close: () => void } | null>(null);
+
+  useEffect(
+    () => () => {
+      streamRef.current?.close();
+      Speech.stop();
+    },
+    [],
+  );
 
   const speak = useCallback((text: string) => {
     Speech.stop();
@@ -47,177 +50,322 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
     (overrideText?: string) => {
       const text = (overrideText ?? input).trim();
       if (!text || streaming) return;
+      setLastQuestion(text);
       setInput('');
-      const userMsg: ChatMessage = { role: 'user', content: text, reasoning_content: null };
-      const asstMsg: ChatMessage = { role: 'assistant', content: '', reasoning_content: null };
-      setMsgs((m) => [...m, userMsg, asstMsg]);
+      setMessages((current) => [
+        ...current,
+        { role: 'user', content: text, reasoning_content: null },
+        { role: 'assistant', content: '', reasoning_content: null },
+      ]);
       setStreaming(true);
 
-      const es = streamKroomboxChat(
+      streamRef.current = streamKroomboxChat(
         { message: `${context}\n\nPertanyaan user: ${text}`, useRag: true, stream: true },
         {
-          onToken: (delta) => {
-            setMsgs((cur) => {
-              const copy = [...cur];
-              const last = copy[copy.length - 1];
-              if (last?.role === 'assistant') {
-                copy[copy.length - 1] = { ...last, content: last.content + delta };
-              }
-              return copy;
-            });
-          },
+          onToken: (delta) =>
+            setMessages((current) => {
+              const next = [...current];
+              const last = next[next.length - 1];
+              if (last?.role === 'assistant')
+                next[next.length - 1] = { ...last, content: last.content + delta };
+              return next;
+            }),
           onDone: () => {
             setStreaming(false);
-            // Bacakan jawaban AI bila autoSpeak aktif + report ke callback.
-            setMsgs((cur) => {
-              const last = cur[cur.length - 1];
+            streamRef.current = null;
+            setMessages((current) => {
+              const last = current[current.length - 1];
               if (last?.role === 'assistant' && last.content) {
                 if (autoSpeak) speak(last.content);
                 onAssistantMessage?.(last.content);
               }
-              return cur;
+              return current;
             });
           },
-          onError: (e) => {
+          onError: () => {
             setStreaming(false);
-            setMsgs((cur) => [
-              ...cur,
-              { role: 'assistant', content: `Error: ${e.message}`, reasoning_content: null },
-            ]);
+            streamRef.current = null;
+            setMessages((current) => {
+              const next = [...current];
+              const last = next[next.length - 1];
+              if (last?.role === 'assistant' && !last.content) next.pop();
+              return [
+                ...next,
+                {
+                  role: 'assistant',
+                  content: 'Koneksi terputus. Coba kirim lagi.',
+                  reasoning_content: null,
+                },
+              ];
+            });
           },
         },
       );
-      return () => es.close();
     },
-    [input, streaming, context, autoSpeak, speak, onAssistantMessage],
+    [autoSpeak, context, input, onAssistantMessage, speak, streaming],
   );
 
-  return (
-    <View style={[styles.panel, compact && styles.panelCompact, elevation.md]}>
-      <View style={styles.header}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <MaterialIcons name="smart-toy" size={20} color={colors.primary} />
-          <Text style={styles.title}>AI Menemanimu</Text>
-        </View>
-        <TouchableOpacity onPress={() => setAutoSpeak((v) => !v)} style={styles.speakToggle}>
-          <MaterialIcons 
-            name={autoSpeak ? "volume-up" : "volume-off"} 
-            size={16} 
-            color={autoSpeak ? colors.success : colors.textMuted} 
-          />
-          <Text style={[styles.speakText, autoSpeak && styles.speakTextOn]}>
-            {autoSpeak ? 'Suara nyala' : 'Suara mati'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+  const stop = () => {
+    streamRef.current?.close();
+    streamRef.current = null;
+    setStreaming(false);
+  };
 
-      <ScrollView
-        ref={scrollRef}
-        style={styles.msgs}
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-      >
-        {msgs.length === 0 ? (
-          <View style={styles.hintContainer}>
-            <MaterialIcons name="lightbulb-outline" size={16} color={colors.textMuted} />
-            <Text style={styles.hint}>
-              Tanya apa saja: "Bisa ganti santan dengan susu?", "Berapa lama ayam diungkep?", atau
-              ketik di bawah.
-            </Text>
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={[styles.panel, compact && styles.panelCompact, elevation.sm]}>
+        <View style={styles.header}>
+          <View style={styles.identity}>
+            <View style={styles.avatar}>
+              <MaterialIcons name="grain" size={18} color={colors.primaryDark} />
+            </View>
+            <View>
+              <Text style={styles.eyebrow}>PENDAMPING RESEP</Text>
+              <Text style={styles.title}>Chef sorgumcore</Text>
+            </View>
           </View>
-        ) : (
-          msgs.map((m, i) => (
-            <View
-              key={i}
-              style={[styles.bubble, m.role === 'user' ? styles.bubbleUser : styles.bubbleAI]}
-            >
-              <Text style={[styles.bubbleText, m.role === 'user' && styles.bubbleTextUser]}>
-                {m.content}
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: autoSpeak }}
+            accessibilityLabel={
+              autoSpeak ? 'Matikan pembacaan jawaban' : 'Aktifkan pembacaan jawaban'
+            }
+            onPress={() => {
+              setAutoSpeak((value) => !value);
+              if (autoSpeak) Speech.stop();
+            }}
+            style={({ pressed }) => [
+              styles.speakToggle,
+              autoSpeak && styles.speakToggleOn,
+              pressed && styles.pressed,
+            ]}
+          >
+            <MaterialIcons
+              name={autoSpeak ? 'volume-up' : 'volume-off'}
+              size={18}
+              color={autoSpeak ? colors.primaryDark : colors.textMuted}
+            />
+          </Pressable>
+        </View>
+
+        <ScrollView
+          ref={scrollRef}
+          style={styles.messages}
+          contentContainerStyle={styles.messagesContent}
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+        >
+          {messages.length === 0 ? (
+            <View style={styles.tip}>
+              <Text style={styles.tipLabel}>TIP</Text>
+              <Text style={styles.tipText}>
+                Tanyakan pengganti bahan, jumlah porsi, atau bagian resep yang belum jelas.
               </Text>
             </View>
-          ))
-        )}
-        {streaming ? <ActivityIndicator size="small" color={colors.primary} /> : null}
-      </ScrollView>
+          ) : (
+            messages.map((message, index) => (
+              <View
+                key={`${message.role}-${index}`}
+                style={[styles.messageRow, message.role === 'user' && styles.messageRowUser]}
+              >
+                {message.role === 'assistant' ? (
+                  <View style={styles.avatarSmall}>
+                    <MaterialIcons name="grain" size={13} color={colors.primary} />
+                  </View>
+                ) : null}
+                <View
+                  style={[
+                    styles.bubble,
+                    message.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant,
+                  ]}
+                >
+                  <Text
+                    style={[styles.bubbleText, message.role === 'user' && styles.bubbleTextUser]}
+                  >
+                    {message.content || '…'}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+          {streaming ? (
+            <Text style={styles.streamLabel} accessibilityLiveRegion="polite">
+              Sedang menyiapkan jawaban…
+            </Text>
+          ) : null}
+        </ScrollView>
 
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          value={input}
-          onChangeText={setInput}
-          placeholder={placeholder || 'Tanya AI…'}
-          placeholderTextColor={colors.textMuted}
-          onSubmitEditing={() => send()}
-          multiline
-        />
-        <TouchableOpacity onPress={() => send()} style={styles.sendBtn} disabled={streaming}>
-          <MaterialIcons name="send" size={18} color={colors.textOnPrimary} />
-        </TouchableOpacity>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.suggestions}
+          keyboardShouldPersistTaps="handled"
+        >
+          {SUGGESTIONS.map((suggestion) => (
+            <Pressable
+              key={suggestion}
+              onPress={() => send(suggestion)}
+              disabled={streaming}
+              style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
+            >
+              <Text style={styles.suggestionText}>{suggestion}</Text>
+            </Pressable>
+          ))}
+          {lastQuestion && !streaming ? (
+            <Pressable
+              onPress={() => send(lastQuestion)}
+              style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
+            >
+              <MaterialIcons name="refresh" size={14} color={colors.primary} />
+              <Text style={styles.suggestionText}>Ulangi</Text>
+            </Pressable>
+          ) : null}
+        </ScrollView>
+
+        <View style={styles.composer}>
+          <TextInput
+            accessibilityLabel="Pesan untuk pendamping resep"
+            style={styles.input}
+            value={input}
+            onChangeText={setInput}
+            placeholder={placeholder || 'Tulis pertanyaan…'}
+            placeholderTextColor={colors.textSubtle}
+            onSubmitEditing={() => send()}
+            multiline
+          />
+          <Pressable
+            accessibilityLabel={streaming ? 'Hentikan jawaban' : 'Kirim pesan'}
+            onPress={streaming ? stop : () => send()}
+            disabled={!streaming && !input.trim()}
+            style={({ pressed }) => [
+              styles.sendButton,
+              !streaming && !input.trim() && styles.sendDisabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            {streaming ? (
+              <MaterialIcons name="stop" size={18} color={colors.primaryDark} />
+            ) : (
+              <MaterialIcons name="arrow-upward" size={19} color={colors.primaryDark} />
+            )}
+          </Pressable>
+        </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   panel: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 0, // Removed border in favor of elevation
-    padding: spacing.md,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
     marginTop: spacing.lg,
+    overflow: 'hidden',
   },
   panelCompact: { marginTop: spacing.sm },
   header: {
+    minHeight: 68,
+    paddingHorizontal: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  title: { ...typography.label, color: colors.text, fontSize: 15 },
-  speakToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceAlt,
-  },
-  speakText: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
-  speakTextOn: { color: colors.success },
-  msgs: { maxHeight: 200, marginBottom: spacing.sm },
-  hintContainer: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, padding: spacing.xs },
-  hint: { color: colors.textMuted, fontSize: 13, fontStyle: 'italic', flex: 1 },
-  bubble: {
-    borderRadius: radius.md,
-    padding: spacing.sm,
-    marginBottom: spacing.xs,
-    maxWidth: '92%',
-  },
-  bubbleUser: { backgroundColor: colors.primary, alignSelf: 'flex-end', borderTopRightRadius: 4 },
-  bubbleAI: { backgroundColor: colors.surfaceAlt, alignSelf: 'flex-start', borderTopLeftRadius: 4 },
-  bubbleText: { color: colors.text, fontSize: 14, lineHeight: 20 },
-  bubbleTextUser: { color: colors.textOnPrimary },
-  inputRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' },
-  input: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 90,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: 14,
-    color: colors.text,
-    backgroundColor: colors.background,
-  },
-  sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
+  identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    ...elevation.sm,
   },
+  eyebrow: { ...typography.label, fontSize: 9, color: colors.accentDark },
+  title: { ...typography.h3, fontSize: 17, color: colors.text },
+  speakToggle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  speakToggleOn: { backgroundColor: colors.accent },
+  messages: { maxHeight: 280, minHeight: 130 },
+  messagesContent: { padding: spacing.md },
+  tip: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    paddingLeft: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  tipLabel: { ...typography.label, fontSize: 9, color: colors.accentDark },
+  tipText: { ...typography.bodySm, color: colors.textMuted, marginTop: 3 },
+  messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: spacing.sm },
+  messageRowUser: { justifyContent: 'flex-end' },
+  avatarSmall: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bubble: {
+    maxWidth: '82%',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radius.lg,
+  },
+  bubbleAssistant: { backgroundColor: colors.surfaceAlt, borderBottomLeftRadius: 4 },
+  bubbleUser: { backgroundColor: colors.primary, borderBottomRightRadius: 4 },
+  bubbleText: { ...typography.bodySm, color: colors.text },
+  bubbleTextUser: { color: colors.textOnPrimary },
+  streamLabel: { ...typography.caption, color: colors.textMuted, marginLeft: 32 },
+  suggestions: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
+  suggestion: {
+    minHeight: 38,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    gap: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestionText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
+  },
+  input: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 96,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: colors.text,
+  },
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendDisabled: { opacity: 0.38 },
+  pressed: { opacity: 0.7 },
 });
