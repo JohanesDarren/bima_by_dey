@@ -15,7 +15,11 @@ interface Props {
 }
 
 export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabel }: Props) {
-  const { state, transcript, aiResponse, errorMsg, startCall, stopCall } = useVoiceCall(segment);
+  const { state, transcript, aiResponse, errorMsg, startCall, stopCall } = useVoiceCall(
+    segment,
+    recipeName,
+    stepLabel,
+  );
   const [elapsed, setElapsed] = useState(0);
   const [muted, setMuted] = useState(false);
 
@@ -44,19 +48,25 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
   const status = muted
     ? 'Mikrofon dimatikan'
     : state === 'listening'
-      ? 'Sedang mendengarkan'
+      ? 'Sedang mendengarkan…'
       : state === 'thinking'
-        ? 'Sedang menyiapkan jawaban'
+        ? 'Mencari jawaban di RAG…'
         : state === 'speaking'
-          ? 'Sedang berbicara'
+          ? 'Sedang berbicara…'
           : state === 'error'
-            ? 'Panggilan terganggu'
-            : 'Menghubungkan';
+            ? 'Layanan terganggu'
+            : 'Menghubungkan…';
 
   const minutes = Math.floor(elapsed / 60)
     .toString()
     .padStart(2, '0');
   const seconds = (elapsed % 60).toString().padStart(2, '0');
+  const initials = (recipeName || 'Sorgum Core')
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase();
 
   return (
     <Modal
@@ -67,11 +77,9 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
     >
       <SafeAreaView style={styles.safe}>
         <View style={styles.topBar}>
-          <View>
-            <Text style={styles.eyebrow}>PENDAMPING MEMASAK</Text>
-            <Text style={styles.brand}>sorgumcore</Text>
-          </View>
+          <Text style={styles.brand}>sorgumcore</Text>
           <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Tutup panggilan"
             onPress={close}
             style={styles.closeButton}
@@ -82,15 +90,31 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
 
         <View style={styles.contextCard}>
           <View style={styles.contextIcon}>
-            <MaterialIcons name="menu-book" size={21} color={colors.accent} />
+            <Text style={styles.initials}>{initials}</Text>
           </View>
           <View style={styles.contextCopy}>
             <Text style={styles.contextLabel}>RESEP AKTIF</Text>
-            <Text style={styles.contextTitle} numberOfLines={2}>
+            <Text style={styles.contextTitle} numberOfLines={1}>
               {recipeName || 'Pendamping resep sorgum'}
             </Text>
             {stepLabel ? <Text style={styles.contextMeta}>{stepLabel}</Text> : null}
           </View>
+          <MaterialIcons name="chevron-right" size={20} color={colors.accent} />
+        </View>
+
+        <View style={styles.modeToggle} accessibilityRole="tablist">
+          <View
+            accessibilityRole="tab"
+            accessibilityState={{ selected: true }}
+            style={[styles.modeButton, styles.modeButtonActive]}
+          >
+            <MaterialIcons name="phone-in-talk" size={16} color={colors.accent} />
+            <Text style={styles.modeTextActive}>Panggilan Suara</Text>
+          </View>
+          <Pressable accessibilityRole="tab" onPress={close} style={styles.modeButton}>
+            <MaterialIcons name="chat-bubble-outline" size={16} color={colors.textMuted} />
+            <Text style={styles.modeText}>Chat Teks</Text>
+          </Pressable>
         </View>
 
         <View style={styles.callArea}>
@@ -106,11 +130,17 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
                 />
               )}
             </View>
+            <View style={styles.liveDot} />
           </View>
-          <Text style={styles.name}>Chef sorgumcore</Text>
+          <Text style={styles.name}>Chef Sorghum AI</Text>
           <Text style={styles.status} accessibilityLiveRegion="polite">
             {status}
           </Text>
+          <View style={styles.waveform} accessibilityElementsHidden>
+            {[10, 20, 28, 17, 24, 12].map((height, index) => (
+              <View key={index} style={[styles.waveBar, { height }]} />
+            ))}
+          </View>
           <Text
             style={styles.duration}
             accessibilityLabel={`Durasi panggilan ${minutes} menit ${seconds} detik`}
@@ -121,7 +151,7 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
           <View style={styles.transcriptBox}>
             {state === 'error' ? (
               <>
-                <Text style={styles.errorText}>{errorMsg || 'Fitur suara belum tersedia.'}</Text>
+                <Text style={styles.errorText}>{errorMsg || 'Layanan RAG belum tersedia.'}</Text>
                 <Pressable
                   accessibilityRole="button"
                   onPress={startCall}
@@ -130,40 +160,36 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
                   <Text style={styles.retryText}>Coba lagi</Text>
                 </Pressable>
               </>
-            ) : (
+            ) : state === 'speaking' ? (
               <Text style={styles.transcript} numberOfLines={4}>
-                {state === 'speaking'
-                  ? aiResponse
-                  : transcript || 'Bicara setelah indikator mendengarkan aktif.'}
+                {aiResponse}
               </Text>
-            )}
+            ) : transcript ? (
+              <Text style={styles.transcript} numberOfLines={2}>
+                {transcript}
+              </Text>
+            ) : null}
           </View>
         </View>
 
         <View style={styles.controls}>
-          <View style={styles.controlGroup}>
-            <Pressable
-              accessibilityRole="switch"
-              accessibilityState={{ checked: muted }}
-              accessibilityLabel={muted ? 'Aktifkan mikrofon' : 'Matikan mikrofon'}
-              onPress={toggleMute}
-              style={[styles.controlButton, muted && styles.controlSelected]}
-            >
-              <MaterialIcons name={muted ? 'mic-off' : 'mic'} size={24} color={colors.text} />
-            </Pressable>
-            <Text style={styles.controlLabel}>{muted ? 'Bunyikan' : 'Bisukan'}</Text>
-          </View>
-
-          <View style={styles.controlGroup}>
-            <Pressable
-              accessibilityLabel="Akhiri panggilan"
-              onPress={close}
-              style={styles.endButton}
-            >
-              <MaterialIcons name="call-end" size={27} color={colors.white} />
-            </Pressable>
-            <Text style={styles.controlLabel}>Akhiri</Text>
-          </View>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: muted }}
+            accessibilityLabel={muted ? 'Aktifkan mikrofon' : 'Matikan mikrofon'}
+            onPress={toggleMute}
+            style={[styles.controlButton, muted && styles.controlSelected]}
+          >
+            <MaterialIcons name={muted ? 'mic-off' : 'mic'} size={24} color={colors.text} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Akhiri panggilan"
+            onPress={close}
+            style={styles.endButton}
+          >
+            <MaterialIcons name="call-end" size={27} color={colors.white} />
+          </Pressable>
         </View>
       </SafeAreaView>
     </Modal>
@@ -173,7 +199,7 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   topBar: {
-    minHeight: 76,
+    minHeight: 70,
     paddingHorizontal: spacing.xl,
     flexDirection: 'row',
     alignItems: 'center',
@@ -181,19 +207,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  eyebrow: { ...typography.label, fontSize: 9, color: colors.accentDark },
   brand: { ...typography.h3, fontSize: 22, color: colors.primary },
   closeButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
   contextCard: {
-    margin: spacing.xl,
-    marginBottom: 0,
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.md,
     padding: spacing.md,
     borderRadius: radius.xl,
     backgroundColor: colors.primary,
@@ -211,10 +236,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  contextCopy: { flex: 1 },
+  initials: { ...typography.h3, fontSize: 16, color: colors.accent },
+  contextCopy: { flex: 1, minWidth: 0 },
   contextLabel: { ...typography.label, fontSize: 9, color: colors.accent },
-  contextTitle: { ...typography.h3, fontSize: 16, color: colors.textOnPrimary, marginTop: 2 },
+  contextTitle: {
+    ...typography.bodySm,
+    fontWeight: '800',
+    color: colors.textOnPrimary,
+    marginTop: 2,
+  },
   contextMeta: { ...typography.caption, color: '#B8C5BB', marginTop: 2 },
+  modeToggle: {
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.md,
+    padding: 4,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+  },
+  modeButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  modeButtonActive: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.accent },
+  modeText: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
+  modeTextActive: { ...typography.caption, color: colors.primary, fontWeight: '800' },
   callArea: {
     flex: 1,
     alignItems: 'center',
@@ -238,16 +291,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  liveDot: {
+    position: 'absolute',
+    right: 10,
+    bottom: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.success,
+    borderWidth: 3,
+    borderColor: colors.background,
+  },
   name: { ...typography.h2, color: colors.text, marginTop: spacing.xl },
   status: { ...typography.bodySm, color: colors.primary, fontWeight: '700', marginTop: spacing.xs },
+  waveform: {
+    height: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: spacing.sm,
+  },
+  waveBar: { width: 4, borderRadius: 2, backgroundColor: colors.success },
   duration: {
     ...typography.caption,
     color: colors.textMuted,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
     fontVariant: ['tabular-nums'],
   },
-  transcriptBox: { minHeight: 96, width: '100%', marginTop: spacing.xl, alignItems: 'center' },
-  transcript: { ...typography.body, color: colors.textMuted, textAlign: 'center' },
+  transcriptBox: { minHeight: 72, width: '100%', marginTop: spacing.lg, alignItems: 'center' },
+  transcript: { ...typography.bodySm, color: colors.textMuted, textAlign: 'center' },
   errorText: { ...typography.bodySm, color: colors.danger, textAlign: 'center' },
   retryButton: {
     minHeight: 44,
@@ -259,31 +331,32 @@ const styles = StyleSheet.create({
   controls: {
     marginHorizontal: spacing.xl,
     marginBottom: spacing.xl,
-    padding: spacing.md,
-    borderRadius: radius.xl,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.lg,
   },
-  controlGroup: { alignItems: 'center', gap: 5 },
   controlButton: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
   controlSelected: { borderWidth: 2, borderColor: colors.accent },
   endButton: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: colors.danger,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  controlLabel: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
 });

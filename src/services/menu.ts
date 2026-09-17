@@ -1,6 +1,5 @@
 import { chatKroombox, extractJson, extractJsonArray } from './kroombox';
 import type { FoodCategory, MenuItem, Recipe, RecipeRequest, Segment } from '../types';
-import { FALLBACK_MENUS, getFallbackRecipe } from './fallbackRecipes';
 
 const CATEGORY_LABEL: Record<FoodCategory, string> = {
   main_course: 'main course (makanan utama)',
@@ -103,6 +102,7 @@ function promptSearchRecipe(query: string, seg: Segment, category: FoodCategory 
  * Ambil daftar menu andalan untuk satu segmentasi (RAG, non-streaming).
  */
 export async function getRecommendedMenus(seg: Segment, count = 5): Promise<MenuItem[]> {
+  let lastError: unknown;
   // API flaky (bypass cuota kadang balas "Maaf, tidak ada teks…") → retry.
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -114,11 +114,12 @@ export async function getRecommendedMenus(seg: Segment, count = 5): Promise<Menu
       if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
       const parsed = extractJsonArray<MenuItem>(raw);
       if (parsed) return normMenu(parsed);
-    } catch {
-      // API may be temporarily unavailable; fall back after retries.
+    } catch (error) {
+      lastError = error;
     }
   }
-  return FALLBACK_MENUS.slice(0, count);
+  if (lastError instanceof Error) throw lastError;
+  throw new Error('Respons RAG tidak dapat dibaca. Coba lagi.');
 }
 
 /**
@@ -126,6 +127,7 @@ export async function getRecommendedMenus(seg: Segment, count = 5): Promise<Menu
  */
 export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe> {
   let raw = '';
+  let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const r = await chatKroombox({
@@ -137,13 +139,14 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
         raw = r;
         break;
       }
-    } catch {
-      if (attempt === 2) return getFallbackRecipe(menuName);
+    } catch (error) {
+      lastError = error;
     }
   }
   const parsed = extractJson<Recipe>(raw);
   if (!parsed || !Array.isArray(parsed.steps) || parsed.steps.length === 0) {
-    return getFallbackRecipe(menuName);
+    if (lastError instanceof Error) throw lastError;
+    throw new Error('Resep dari RAG tidak dapat dibaca. Coba lagi.');
   }
   return parsed;
 }
@@ -152,6 +155,7 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
  * Cari resep lain via AI sesuai kebutuhan + kategori (RAG, non-streaming).
  */
 export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
+  let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const raw = await chatKroombox({
@@ -162,14 +166,10 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
       if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
       const parsed = extractJsonArray<MenuItem>(raw);
       if (parsed) return normMenu(parsed);
-    } catch {
-      // API may be temporarily unavailable; fall back after retries.
+    } catch (error) {
+      lastError = error;
     }
   }
-  const query = (req.query ?? '').trim().toLowerCase();
-  return FALLBACK_MENUS.filter((menu) => {
-    const categoryMatches = !req.category || menu.category === req.category;
-    const queryMatches = !query || `${menu.name} ${menu.description}`.toLowerCase().includes(query);
-    return categoryMatches && queryMatches;
-  });
+  if (lastError instanceof Error) throw lastError;
+  throw new Error('Hasil RAG tidak dapat dibaca. Coba lagi.');
 }

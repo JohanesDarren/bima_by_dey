@@ -244,6 +244,9 @@ export function CookingScreen({ navigation, route }: Props) {
               ? `Saya sedang memasak "${recipe?.name}". Langkah ${stepIdx + 1}/${steps.length}: ${step.title}. ${step.instruction}. Bantu & temani saya selama proses masak, jawab pertanyaan saat saya ragu.`
               : `Saya sedang memasak "${recipe?.name}". Temani & bantu saya.`
           }
+          recipeName={recipe.name}
+          recipeMeta={`Langkah ${stepIdx + 1} dari ${steps.length}`}
+          onVoiceCall={() => setVoiceCallVisible(true)}
           placeholder={`Tanya soal langkah ${stepIdx + 1} / tanya bahan…`}
           onAssistantMessage={(t) => setNotes((n) => [...n, t])}
         />

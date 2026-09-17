@@ -1,0 +1,237 @@
+<!DOCTYPE html><html lang="id"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>sorgumcore — Dapur Sorgum Keluarga</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+    body {
+      background-color: #1c2621;
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      color: #E9DDCD;
+    }
+    .font-serif {
+      font-family: 'Fraunces', Georgia, serif;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+</style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-start py-6 px-4 selection:bg-[#c79a45] selection:text-[#1c2621]" style="background-color: #F2F5F3; color: #2D3732; font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;">
+<!-- Mobile Frame Wrapper -->
+<main class="w-full max-w-[390px] mx-auto flex flex-col shadow-2xl rounded-[36px] overflow-hidden border-[7px] border-[#29231D] relative min-h-[800px] bg-[#FAF6F0]">
+<!-- Top Notch / Status Bar Area -->
+<div class="w-full bg-[#1c2621] px-6 pt-4 pb-2 flex justify-between items-center text-xs text-[#a3b1a8]">
+<span class="font-semibold">09:41</span>
+<div class="w-24 h-4 bg-[#27352d] rounded-full mx-auto absolute left-1/2 -translate-x-1/2 top-3 flex items-center justify-center">
+<div class="w-2 h-2 rounded-full bg-[#1c2621]"></div>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]">signal_cellular_alt</span>
+<span class="material-symbols-outlined text-[16px]">wifi</span>
+<span class="material-symbols-outlined text-[16px]">battery_full</span>
+</div>
+</div>
+<!-- Header Ringkas -->
+<header class="px-5 pt-3 pb-4 flex items-center justify-between border-b border-[#2e3b33]">
+<div class="flex items-center gap-3">
+<div><div><h1 class="font-serif text-lg font-bold tracking-wide text-[#1c2621]">sorgumcore</h1></div></div>
+</div>
+<button class="w-10 h-10 rounded-full bg-[#27352d] border border-[#3b4d42] flex items-center justify-center text-[#f5f0e8] relative hover:bg-[#32443a] transition-colors">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#c79a45]"></span>
+</button>
+</header>
+<!-- Scrollable Content Area -->
+<div class="flex-1 overflow-y-auto no-scrollbar pb-24">
+<!-- Pemilih Profil Anggota Keluarga -->
+<section class="px-5 pt-5 pb-3">
+<div class="flex items-center justify-between mb-3">
+<h2 class="text-xs font-semibold uppercase tracking-wider text-[#9bb0a3]">Profil Konsumsi Aktif</h2>
+<span class="text-xs text-[#c79a45] font-medium flex items-center gap-1 cursor-pointer">
+            Kelola <span class="material-symbols-outlined text-[14px]">chevron_right</span>
+</span>
+</div>
+<div class="flex gap-2.5 overflow-x-auto no-scrollbar pb-1">
+<!-- Active Profile -->
+<div class="flex items-center gap-2.5 bg-[#27352d] border border-[#c79a45] px-3.5 py-2.5 rounded-2xl shrink-0 shadow-sm">
+<div class="w-8 h-8 rounded-full bg-[#c79a45]/20 flex items-center justify-center text-[#c79a45]">
+<span class="material-symbols-outlined text-[18px]">child_care</span>
+</div>
+<div>
+<p class="text-xs font-bold text-[#f5f0e8]">Anak SD (7-12 th)</p>
+<p class="text-[10px] text-[#c79a45]">Tinggi Kalsium &amp; Serat</p>
+</div>
+</div>
+<!-- Inactive Profile 1 -->
+<div class="flex items-center gap-2.5 bg-[#222e28] border border-[#2e3b33] px-3.5 py-2.5 rounded-2xl shrink-0 opacity-70 hover:opacity-100 transition-opacity cursor-pointer">
+<div class="w-8 h-8 rounded-full bg-[#2e3b33] flex items-center justify-center text-[#9bb0a3]">
+<span class="material-symbols-outlined text-[18px]">elderly</span>
+</div>
+<div>
+<p class="text-xs font-bold text-[#f5f0e8]">Lansia</p>
+<p class="text-[10px] text-[#9bb0a3]">Rendah Glukosa</p>
+</div>
+</div>
+<!-- Inactive Profile 2 -->
+<div class="flex items-center gap-2.5 bg-[#222e28] border border-[#2e3b33] px-3.5 py-2.5 rounded-2xl shrink-0 opacity-70 hover:opacity-100 transition-opacity cursor-pointer">
+<div class="w-8 h-8 rounded-full bg-[#2e3b33] flex items-center justify-center text-[#9bb0a3]">
+<span class="material-symbols-outlined text-[18px]">fitness_center</span>
+</div>
+<div>
+<p class="text-xs font-bold text-[#f5f0e8]">Dewasa / Umum</p>
+<p class="text-[10px] text-[#9bb0a3]">Diet Seimbang</p>
+</div>
+</div>
+</div>
+</section>
+<!-- CTA Utama yang Jelas -->
+<section class="px-5 py-2">
+<div class="bg-gradient-to-r from-[#27352d] to-[#202d26] border border-[#3b4d42] rounded-2xl p-4 relative overflow-hidden shadow-lg">
+<div class="absolute -right-6 -bottom-6 w-28 h-28 bg-[#c79a45]/10 rounded-full blur-xl pointer-events-none"></div>
+<div class="relative z-10 flex items-center justify-between">
+<div class="max-w-[200px]">
+<span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#c79a45] text-[#1c2621] mb-1.5">REKOMENDASI AI</span>
+<h3 class="font-serif text-base font-bold text-[#f5f0e8] leading-tight mb-1">Analisis Stok Dapur &amp; Resep Hari Ini</h3>
+<p class="text-[11px] text-[#9bb0a3] line-clamp-2">Buat bubur sorgum kaya protein dari bahan yang tersedia.</p>
+</div>
+<button class="bg-[#c79a45] hover:bg-[#b58837] text-[#1c2621] font-bold text-xs px-4 py-3 rounded-xl shadow-md flex items-center gap-1.5 transition-all shrink-0">
+<span class="">Mulai Masak</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Pencarian Resep -->
+<section class="px-5 py-3">
+<div class="relative">
+<span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#9bb0a3]">
+<span class="material-symbols-outlined text-[20px]">search</span>
+</span>
+<input class="w-full bg-[#27352d] border border-[#3b4d42] rounded-xl pl-10 pr-4 py-3 text-xs text-[#f5f0e8] placeholder-[#9bb0a3] focus:outline-none focus:border-[#c79a45] transition-colors shadow-inner" placeholder="Cari resep bubur, nasi, kue sorgum..." type="text">
+<span class="absolute inset-y-0 right-0 pr-3 flex items-center text-[#9bb0a3] cursor-pointer">
+<span class="material-symbols-outlined text-[18px]">tune</span>
+</span>
+</div>
+</section>
+<!-- Filter Kategori Horizontal -->
+<section class="py-1">
+<div class="flex gap-2 px-5 overflow-x-auto no-scrollbar">
+<button class="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-[#c79a45] text-[#1c2621] shrink-0 shadow-sm">Semua</button>
+<button class="px-3.5 py-1.5 rounded-xl text-xs font-medium bg-[#27352d] text-[#f5f0e8] border border-[#3b4d42] shrink-0 hover:bg-[#32443a]">Makanan Utama</button>
+<button class="px-3.5 py-1.5 rounded-xl text-xs font-medium bg-[#27352d] text-[#f5f0e8] border border-[#3b4d42] shrink-0 hover:bg-[#32443a]">Camilan Anak</button>
+<button class="px-3.5 py-1.5 rounded-xl text-xs font-medium bg-[#27352d] text-[#f5f0e8] border border-[#3b4d42] shrink-0 hover:bg-[#32443a]">Bubur Sehat</button>
+<button class="px-3.5 py-1.5 rounded-xl text-xs font-medium bg-[#27352d] text-[#f5f0e8] border border-[#3b4d42] shrink-0 hover:bg-[#32443a]">Bebas Gluten</button>
+</div>
+</section>
+<!-- Rekomendasi Resep Unggulan -->
+<section class="px-5 pt-4 pb-2">
+<div class="flex items-center justify-between mb-3">
+<h2 class="font-serif text-base font-bold text-[#f5f0e8]">Resep Unggulan Keluarga</h2>
+<span class="text-xs text-[#c79a45] font-medium cursor-pointer hover:underline">Lihat Semua</span>
+</div>
+<div class="flex flex-col gap-3.5">
+<!-- Recipe Card 1 -->
+<div class="bg-[#27352d] border border-[#3b4d42] rounded-2xl p-3.5 flex gap-3.5 shadow-md hover:border-[#c79a45]/50 transition-all cursor-pointer group">
+<div class="w-24 h-24 rounded-xl bg-[#202d26] border border-[#3b4d42] relative overflow-hidden shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-[36px] text-[#c79a45] group-hover:scale-110 transition-transform">bakery_dining</span>
+<div class="absolute top-1.5 left-1.5 bg-[#1c2621]/80 backdrop-blur-sm px-1.5 py-0.5 rounded text-[9px] font-bold text-[#c79a45]">
+                ⭐ 4.9
+              </div>
+</div>
+<div class="flex-1 flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between mb-1">
+<span class="text-[10px] font-semibold text-[#c79a45] uppercase tracking-wider">Camilan Anak</span>
+<span class="text-[10px] text-[#9bb0a3] flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">schedule</span> 25 mnt
+                  </span>
+</div>
+<h3 class="font-serif text-sm font-bold text-[#f5f0e8] leading-snug group-hover:text-[#c79a45] transition-colors">Cookies Tepung Sorgum Madu</h3>
+</div>
+<!-- Indikator Nutrisi Visual -->
+<div class="mt-2 pt-2 border-t border-[#3b4d42]/60 flex items-center gap-2">
+<div class="flex-1 bg-[#202d26] rounded-md px-2 py-1 border border-[#3b4d42]">
+<p class="text-[9px] text-[#9bb0a3]">Kalori</p>
+<p class="text-[11px] font-bold text-[#f5f0e8]">140 <span class="text-[9px] font-normal text-[#9bb0a3]">Kkal</span></p>
+</div>
+<div class="flex-1 bg-[#202d26] rounded-md px-2 py-1 border border-[#3b4d42]">
+<p class="text-[9px] text-[#9bb0a3]">Protein</p>
+<p class="text-[11px] font-bold text-[#c79a45]">4.2g</p>
+</div>
+<div class="flex-1 bg-[#202d26] rounded-md px-2 py-1 border border-[#3b4d42]">
+<p class="text-[9px] text-[#9bb0a3]">Serat</p>
+<p class="text-[11px] font-bold text-[#f5f0e8]">3.1g</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Recipe Card 2 -->
+<div class="bg-[#27352d] border border-[#3b4d42] rounded-2xl p-3.5 flex gap-3.5 shadow-md hover:border-[#c79a45]/50 transition-all cursor-pointer group">
+<div class="w-24 h-24 rounded-xl bg-[#202d26] border border-[#3b4d42] relative overflow-hidden shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-[36px] text-[#c79a45] group-hover:scale-110 transition-transform">soup_kitchen</span>
+<div class="absolute top-1.5 left-1.5 bg-[#1c2621]/80 backdrop-blur-sm px-1.5 py-0.5 rounded text-[9px] font-bold text-[#c79a45]">
+                ⭐ 4.8
+              </div>
+</div>
+<div class="flex-1 flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between mb-1">
+<span class="text-[10px] font-semibold text-[#c79a45] uppercase tracking-wider">Bubur Sehat</span>
+<span class="text-[10px] text-[#9bb0a3] flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">schedule</span> 35 mnt
+                  </span>
+</div>
+<h3 class="font-serif text-sm font-bold text-[#f5f0e8] leading-snug group-hover:text-[#c79a45] transition-colors">Bubur Sorgum Pandan Gula Aren</h3>
+</div>
+<!-- Indikator Nutrisi Visual -->
+<div class="mt-2 pt-2 border-t border-[#3b4d42]/60 flex items-center gap-2">
+<div class="flex-1 bg-[#202d26] rounded-md px-2 py-1 border border-[#3b4d42]">
+<p class="text-[9px] text-[#9bb0a3]">Kalori</p>
+<p class="text-[11px] font-bold text-[#f5f0e8]">185 <span class="text-[9px] font-normal text-[#9bb0a3]">Kkal</span></p>
+</div>
+<div class="flex-1 bg-[#202d26] rounded-md px-2 py-1 border border-[#3b4d42]">
+<p class="text-[9px] text-[#9bb0a3]">Protein</p>
+<p class="text-[11px] font-bold text-[#c79a45]">5.6g</p>
+</div>
+<div class="flex-1 bg-[#202d26] rounded-md px-2 py-1 border border-[#3b4d42]">
+<p class="text-[9px] text-[#9bb0a3]">Serat</p>
+<p class="text-[11px] font-bold text-[#f5f0e8]">4.5g</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Bottom Navigation Bar (Responsive & Fixed to bottom of mobile frame) -->
+<nav class="absolute bottom-0 left-0 right-0 bg-[#222e28] border-t border-[#2e3b33] px-4 py-2.5 flex justify-around items-center z-20 backdrop-blur-md bg-opacity-95">
+<a class="flex flex-col items-center gap-0.5 text-[#c79a45]" href="#">
+<span class="material-symbols-outlined text-[22px] font-variation-settings:'FILL'_1">home</span>
+<span class="text-[10px] font-bold">Beranda</span>
+</a>
+<a class="flex flex-col items-center gap-0.5 text-[#9bb0a3] hover:text-[#f5f0e8] transition-colors" href="#">
+<span class="material-symbols-outlined text-[22px]">menu_book</span>
+<span class="text-[10px] font-medium">Resep</span>
+</a>
+<a class="flex flex-col items-center gap-0.5 text-[#9bb0a3] hover:text-[#f5f0e8] transition-colors" href="#">
+<span class="material-symbols-outlined text-[22px]">kitchen</span>
+<span class="text-[10px] font-medium">Stok Dapur</span>
+</a>
+
+
+</nav>
+</main>
+
+
+
+
+</body></html>

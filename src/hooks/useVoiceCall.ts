@@ -12,7 +12,7 @@ type EventSubscription = { remove: () => void };
 
 export type VoiceCallState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
-export function useVoiceCall(segment: Segment) {
+export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: string) {
   const [state, setState] = useState<VoiceCallState>('idle');
   const [transcript, setTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
@@ -23,11 +23,13 @@ export function useVoiceCall(segment: Segment) {
   const activeRef = useRef(false);
   const processingRef = useRef(false);
   const segmentRef = useRef(segment);
+  const recipeRef = useRef({ recipeName, stepLabel });
   const listenRef = useRef<() => Promise<void>>(async () => undefined);
 
   useEffect(() => {
     segmentRef.current = segment;
-  }, [segment]);
+    recipeRef.current = { recipeName, stepLabel };
+  }, [segment, recipeName, stepLabel]);
 
   const cleanupListeners = useCallback(() => {
     listenersRef.current.forEach((subscription) => subscription.remove());
@@ -67,7 +69,7 @@ export function useVoiceCall(segment: Segment) {
 
     try {
       const response = await chatKroombox({
-        message: `Konteks Segment: ${JSON.stringify(segmentRef.current)}. Pengguna berkata: "${text}". Jawablah HANYA berdasarkan pengetahuan RAG/resep yang tersedia dengan singkat, ramah, dan ringkas layaknya obrolan telepon (Voice Call). Jangan gunakan list, bullet point, atau format markdown. Maksimal 3 kalimat.`,
+        message: `Konteks resep aktif: ${recipeRef.current.recipeName || 'belum dipilih'}, ${recipeRef.current.stepLabel || 'tanpa langkah aktif'}. Konteks pengguna: ${JSON.stringify(segmentRef.current)}. Pengguna berkata: "${text}". Jawablah HANYA berdasarkan pengetahuan RAG yang tersedia, singkat dan ramah untuk panggilan suara. Jika data RAG tidak mendukung jawaban, katakan secara jujur. Jangan gunakan list atau markdown. Maksimal 3 kalimat.`,
         useRag: true,
         stream: false,
       });

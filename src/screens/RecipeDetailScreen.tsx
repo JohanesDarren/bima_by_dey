@@ -12,6 +12,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
 import { Container } from '../components/Container';
 import { AICompanion } from '../components/AICompanion';
+import { VoiceCallModal } from '../components/VoiceCallModal';
 import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
@@ -27,8 +28,11 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
   const loadRecipe = useFlowStore((s) => s.loadRecipe);
   const isGuest = useAuthStore((s) => s.isGuest);
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() =>
+    Boolean(menu && (!activeRecipe || activeRecipe.name !== menu.name)),
+  );
   const [error, setError] = useState<string | null>(null);
+  const [voiceCallVisible, setVoiceCallVisible] = useState(false);
   const recipe = activeRecipe;
 
   useEffect(() => {
@@ -37,7 +41,11 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
     if (!recipe || recipe.name !== menu.name) {
       setLoading(true);
       setError(null);
-      loadRecipe(menu, segment).finally(() => setLoading(false));
+      loadRecipe(menu, segment)
+        .then((loaded) => {
+          if (!loaded) setError(useFlowStore.getState().menusError || 'Resep RAG belum tersedia.');
+        })
+        .finally(() => setLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menu?.name]);
@@ -51,20 +59,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const displayRecipe = recipe ?? {
-    name: menu?.name ?? 'Resep',
-    servings: 1,
-    ingredients: [],
-    steps: [
-      {
-        order: 1,
-        title: 'Petunjuk',
-        instruction: 'Resep sedang disiapkan.',
-        durationMinutes: null,
-      },
-    ],
-    totalMinutes: 0,
-  };
+  const displayRecipe = menu ? (recipe?.name === menu.name ? recipe : null) : recipe;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -84,7 +79,9 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
       ) : error ? (
         <View style={styles.centerBox}>
           <Text style={styles.errorText}>{error}</Text>
-          <Text style={styles.centerText}>Pastikan koneksi internet aktif.</Text>
+          <Text style={styles.centerText}>
+            Jawaban hanya ditampilkan ketika layanan RAG tersedia.
+          </Text>
         </View>
       ) : displayRecipe ? (
         <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
@@ -140,6 +137,9 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
             <Text style={styles.sectionTitle}>Diskusi Resep</Text>
             <AICompanion
               context={`Kita sedang membahas resep "${displayRecipe.name}" (${displayRecipe.servings} porsi, ±${displayRecipe.totalMinutes} menit). Bahan: ${displayRecipe.ingredients.join(', ')}. Langkah: ${displayRecipe.steps.map((s) => `${s.order}. ${s.title}`).join(' | ')}. Jawab pertanyaan user seputar resep ini dengan ramah.`}
+              recipeName={displayRecipe.name}
+              recipeMeta={`${displayRecipe.totalMinutes} mnt • ${displayRecipe.steps.length} langkah`}
+              onVoiceCall={() => setVoiceCallVisible(true)}
               placeholder="Tanya soal resep / ganti bahan / porsi…"
             />
 
@@ -155,6 +155,20 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
             ) : null}
           </Container>
         </ScrollView>
+      ) : (
+        <View style={styles.centerBox}>
+          <Text style={styles.errorText}>Resep RAG belum tersedia.</Text>
+          <Text style={styles.centerText}>Kembali dan coba lagi setelah layanan pulih.</Text>
+        </View>
+      )}
+      {voiceCallVisible && displayRecipe ? (
+        <VoiceCallModal
+          visible={voiceCallVisible}
+          onClose={() => setVoiceCallVisible(false)}
+          segment={segment}
+          recipeName={displayRecipe.name}
+          stepLabel={`${displayRecipe.totalMinutes} mnt • ${displayRecipe.steps.length} langkah`}
+        />
       ) : null}
     </SafeAreaView>
   );

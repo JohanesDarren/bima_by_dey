@@ -165,13 +165,15 @@ export async function chatKroombox(req: StreamRequest): Promise<string> {
         stream: false,
       }),
     });
-    if (!res.ok) {
-      throw new Error(`API error ${res.status}`);
-    }
+    if (!res.ok) throw new KroomboxError(`Layanan RAG sedang bermasalah (HTTP ${res.status}).`);
     const data = (await res.json()) as ChatResponse;
-    return data.response ?? '';
-  } catch {
-    throw new KroomboxError('data dokumen tidak ditemukan');
+    if (typeof data.response !== 'string' || !data.response.trim()) {
+      throw new KroomboxError('Layanan RAG mengembalikan jawaban kosong. Coba lagi.');
+    }
+    return data.response;
+  } catch (error) {
+    if (error instanceof KroomboxError) throw error;
+    throw new KroomboxError('Layanan RAG tidak dapat dihubungi. Coba lagi nanti.');
   }
 }
 

@@ -17,14 +17,25 @@ import { streamKroomboxChat } from '../services/kroombox';
 
 interface Props {
   context: string;
+  recipeName: string;
+  recipeMeta?: string;
   placeholder?: string;
   compact?: boolean;
+  onVoiceCall?: () => void;
   onAssistantMessage?: (text: string) => void;
 }
 
 const SUGGESTIONS = ['Pengganti bahan?', 'Ubah jumlah porsi?', 'Jelaskan langkah ini'];
 
-export function AICompanion({ context, placeholder, compact, onAssistantMessage }: Props) {
+export function AICompanion({
+  context,
+  recipeName,
+  recipeMeta,
+  placeholder,
+  compact,
+  onVoiceCall,
+  onAssistantMessage,
+}: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -114,14 +125,60 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.panel, compact && styles.panelCompact, elevation.sm]}>
+        <View style={styles.recipeCard}>
+          <View style={styles.recipeInitials}>
+            <Text style={styles.recipeInitialsText}>
+              {recipeName
+                .split(/\s+/)
+                .slice(0, 2)
+                .map((word) => word[0])
+                .join('')
+                .toUpperCase()}
+            </Text>
+          </View>
+          <View style={styles.recipeCopy}>
+            <Text style={styles.recipeBadge}>RESEP AKTIF</Text>
+            <Text style={styles.recipeTitle} numberOfLines={1}>
+              {recipeName}
+            </Text>
+            {recipeMeta ? <Text style={styles.recipeMeta}>{recipeMeta}</Text> : null}
+          </View>
+          <MaterialIcons name="chevron-right" size={20} color={colors.accent} />
+        </View>
+
+        <View style={styles.modeToggle} accessibilityRole="tablist">
+          <Pressable
+            accessibilityRole="tab"
+            accessibilityState={{ selected: false }}
+            onPress={onVoiceCall}
+            disabled={!onVoiceCall}
+            style={styles.modeButton}
+          >
+            <MaterialIcons name="phone-in-talk" size={16} color={colors.textMuted} />
+            <Text style={styles.modeText}>Panggilan Suara</Text>
+          </Pressable>
+          <View
+            accessibilityRole="tab"
+            accessibilityState={{ selected: true }}
+            style={[styles.modeButton, styles.modeButtonActive]}
+          >
+            <MaterialIcons name="chat-bubble-outline" size={16} color={colors.accent} />
+            <Text style={styles.modeTextActive}>Chat Teks</Text>
+          </View>
+        </View>
+
+        <View style={styles.dateRow}>
+          <Text style={styles.dateText}>HARI INI</Text>
+        </View>
+
         <View style={styles.header}>
           <View style={styles.identity}>
             <View style={styles.avatar}>
               <MaterialIcons name="grain" size={18} color={colors.primaryDark} />
             </View>
             <View>
-              <Text style={styles.eyebrow}>PENDAMPING RESEP</Text>
-              <Text style={styles.title}>Chef sorgumcore</Text>
+              <Text style={styles.title}>Chef Sorghum AI</Text>
+              <Text style={styles.subtitle}>Jawaban langsung dari RAG sorgum</Text>
             </View>
           </View>
           <Pressable
@@ -157,9 +214,8 @@ export function AICompanion({ context, placeholder, compact, onAssistantMessage 
         >
           {messages.length === 0 ? (
             <View style={styles.tip}>
-              <Text style={styles.tipLabel}>TIP</Text>
               <Text style={styles.tipText}>
-                Tanyakan pengganti bahan, jumlah porsi, atau bagian resep yang belum jelas.
+                Tanyakan takaran, pengganti bahan, atau langkah yang belum jelas pada resep ini.
               </Text>
             </View>
           ) : (
@@ -265,14 +321,75 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   panelCompact: { marginTop: spacing.sm },
+  recipeCard: {
+    margin: spacing.md,
+    marginBottom: spacing.sm,
+    minHeight: 82,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    backgroundColor: colors.primary,
+    borderWidth: 1,
+    borderColor: colors.surfaceDarkAlt,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  recipeInitials: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceDarkAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recipeInitialsText: { ...typography.h3, color: colors.accent, fontSize: 16 },
+  recipeCopy: { flex: 1, minWidth: 0 },
+  recipeBadge: { ...typography.label, color: colors.accent, fontSize: 9 },
+  recipeTitle: {
+    ...typography.bodySm,
+    color: colors.textOnPrimary,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  recipeMeta: { ...typography.caption, color: '#B8C5BB', marginTop: 2 },
+  modeToggle: {
+    marginHorizontal: spacing.md,
+    padding: 4,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+  },
+  modeButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  modeButtonActive: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.accent },
+  modeText: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
+  modeTextActive: { ...typography.caption, color: colors.primary, fontWeight: '800' },
+  dateRow: { alignItems: 'center', paddingTop: spacing.md },
+  dateText: {
+    ...typography.label,
+    fontSize: 9,
+    color: colors.textMuted,
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
   header: {
     minHeight: 68,
     paddingHorizontal: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomWidth: 0,
   },
   identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   avatar: {
@@ -283,8 +400,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  eyebrow: { ...typography.label, fontSize: 9, color: colors.accentDark },
   title: { ...typography.h3, fontSize: 17, color: colors.text },
+  subtitle: { ...typography.caption, color: colors.textMuted },
   speakToggle: {
     width: 44,
     height: 44,
@@ -302,7 +419,6 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.md,
     paddingVertical: spacing.xs,
   },
-  tipLabel: { ...typography.label, fontSize: 9, color: colors.accentDark },
   tipText: { ...typography.bodySm, color: colors.textMuted, marginTop: 3 },
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: spacing.sm },
   messageRowUser: { justifyContent: 'flex-end' },
