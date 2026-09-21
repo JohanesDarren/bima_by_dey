@@ -49,6 +49,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     if (session?.user) {
       localStore.setLastUserId((session.user as { id: string }).id);
+      localStore.setGuestMode(false);
       set({
         status: 'signedIn',
         user: session.user as unknown as User,
@@ -73,6 +74,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       data: { user },
     } = await supabase.auth.getUser();
     localStore.setLastUserId(user?.id ?? '');
+    localStore.setGuestMode(false);
     set({ status: 'signedIn', user, isGuest: false });
     return { error: null };
   },
@@ -92,5 +94,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await supabase.auth.signOut();
     localStore.setGuestMode(false);
     set({ status: 'signedOut', user: null, isGuest: false });
+    try {
+      const { useProfileStore } = require('./profileStore') as typeof import('./profileStore');
+      const { useChatStore } = require('./chatStore') as typeof import('./chatStore');
+      const { useFlowStore } = require('./flowStore') as typeof import('./flowStore');
+      useProfileStore.getState().reset();
+      useChatStore.getState().resetChat();
+      useFlowStore.getState().reset();
+    } catch {
+      // store lain belum termuat — navigasi akan re-hidrasi saat login berikutnya
+    }
   },
 }));

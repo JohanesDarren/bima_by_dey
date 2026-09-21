@@ -14,17 +14,14 @@ import { Button } from '../components/Button';
 import { FormField } from '../components/FormField';
 import { useAuthStore } from '../store/authStore';
 import { colors, radius, spacing } from '../theme';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../navigation/types';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
-
-export function LoginScreen({ navigation }: Props) {
+export function LoginScreen() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<{ email?: string; password?: string }>({});
   const signIn = useAuthStore((s) => s.signInWithEmail);
   const signUp = useAuthStore((s) => s.signUpWithEmail);
@@ -43,6 +40,7 @@ export function LoginScreen({ navigation }: Props) {
   const submit = async () => {
     if (loading) return;
     setError(null);
+    setNotice(null);
     if (!validate()) return;
     setLoading(true);
     const fn = mode === 'login' ? signIn : signUp;
@@ -50,9 +48,11 @@ export function LoginScreen({ navigation }: Props) {
     setLoading(false);
     if (res.error) {
       setError(res.error);
+      return;
     }
-    // If registered for the first time, Supabase may require email confirmation
-    // before the session exists — direct to Profile Setup next via auth state.
+    if (mode === 'register' && useAuthStore.getState().status !== 'signedIn') {
+      setNotice('Pendaftaran berhasil! Cek email kamu untuk verifikasi, lalu masuk.');
+    }
   };
 
   return (
@@ -98,6 +98,7 @@ export function LoginScreen({ navigation }: Props) {
                 error={fieldError.password}
               />
               {error ? <Text style={styles.error}>{error}</Text> : null}
+              {notice ? <Text style={styles.notice}>{notice}</Text> : null}
               <Button
                 title={mode === 'login' ? 'Masuk' : 'Daftar'}
                 onPress={submit}
@@ -109,6 +110,7 @@ export function LoginScreen({ navigation }: Props) {
                 onPress={() => {
                   setMode((m) => (m === 'login' ? 'register' : 'login'));
                   setError(null);
+                  setNotice(null);
                   setFieldError({});
                 }}
               >
@@ -171,6 +173,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   error: { color: colors.danger, marginBottom: spacing.md, fontSize: 13 },
+  notice: { color: colors.success, marginBottom: spacing.md, fontSize: 13 },
   switchRow: { marginTop: spacing.lg, alignItems: 'center' },
   switchText: { color: colors.textMuted, fontSize: 14 },
   switchLink: { color: colors.primary, fontWeight: '700' },

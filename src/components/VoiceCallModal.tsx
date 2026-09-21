@@ -15,11 +15,8 @@ interface Props {
 }
 
 export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabel }: Props) {
-  const { state, transcript, aiResponse, errorMsg, startCall, stopCall } = useVoiceCall(
-    segment,
-    recipeName,
-    stepLabel,
-  );
+  const { state, transcript, aiResponse, errorMsg, startCall, stopCall, pauseMic, resumeMic } =
+    useVoiceCall(segment, recipeName, stepLabel);
   const [elapsed, setElapsed] = useState(0);
   const [muted, setMuted] = useState(false);
 
@@ -40,8 +37,8 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
   };
 
   const toggleMute = () => {
-    if (muted) startCall();
-    else stopCall();
+    if (muted) resumeMic();
+    else pauseMic();
     setMuted((value) => !value);
   };
 

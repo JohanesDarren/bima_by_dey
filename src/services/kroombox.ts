@@ -1,5 +1,10 @@
 import EventSource from 'react-native-sse';
-import { KROOMBOX_API_KEY, KROOMBOX_BASE_URL, KROOMBOX_CHAT_ENDPOINT } from '../lib/kroomboxConfig';
+import {
+  KROOMBOX_API_KEY,
+  KROOMBOX_BASE_URL,
+  KROOMBOX_CHAT_ENDPOINT,
+  KROOMBOX_CHAT_STREAM_ENDPOINT,
+} from '../lib/kroomboxConfig';
 
 export interface StreamHandlers {
   /** text chunk dari delta stream */
@@ -39,9 +44,9 @@ function isDoneLine(raw: string): boolean {
 }
 
 /**
- * Streams the RAG answer from the BIMA API POST /api/chat over SSE.
+ * Streams the RAG answer over SSE via POST /api/chat/stream.
  *
- * Format nyata (diverifikasi terhadap api.llmsorgum.online):
+ * Format chunk (observasi terhadap api.llmsorgum.online):
  *   data: {"sources": []}
  *   data: {"delta": "teks..."}
  *   data: [DONE]
@@ -49,7 +54,7 @@ function isDoneLine(raw: string): boolean {
  * Autentikasi via header X-API-Key (bukan bearer).
  */
 export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers) {
-  const url = `${KROOMBOX_BASE_URL}${KROOMBOX_CHAT_ENDPOINT}`;
+  const url = `${KROOMBOX_BASE_URL}${KROOMBOX_CHAT_STREAM_ENDPOINT}`;
   const es = new EventSource(url, {
     method: 'POST',
     headers: {
@@ -130,9 +135,11 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
 
 /** Klasifikasi error sederhana untuk chat store. */
 export class KroomboxError extends Error {
-  constructor(message: string) {
+  readonly status?: number;
+  constructor(message: string, status?: number) {
     super(message);
     this.name = 'KroomboxError';
+    this.status = status;
   }
 }
 
@@ -165,7 +172,7 @@ export async function chatKroombox(req: StreamRequest): Promise<string> {
         stream: false,
       }),
     });
-    if (!res.ok) throw new KroomboxError(`Layanan RAG sedang bermasalah (HTTP ${res.status}).`);
+    if (!res.ok) throw await toKroomboxError(res);
     const data = (await res.json()) as ChatResponse;
     if (typeof data.response !== 'string' || !data.response.trim()) {
       throw new KroomboxError('Layanan RAG mengembalikan jawaban kosong. Coba lagi.');
@@ -175,6 +182,37 @@ export async function chatKroombox(req: StreamRequest): Promise<string> {
     if (error instanceof KroomboxError) throw error;
     throw new KroomboxError('Layanan RAG tidak dapat dihubungi. Coba lagi nanti.');
   }
+}
+
+/** Ambil pesan validasi pertama dari body HTTPValidationError ala FastAPI. */
+function firstValidationMessage(detail: unknown): string | null {
+  if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  if (Array.isArray(detail)) {
+    const msg = (detail[0] as { msg?: unknown } | undefined)?.msg;
+    if (typeof msg === 'string' && msg.trim()) return msg.trim();
+  }
+  return null;
+}
+
+/** Ubah respons non-OK menjadi KroomboxError yang pesannya berguna di UI. */
+async function toKroomboxError(res: Response): Promise<KroomboxError> {
+  if (res.status === 429) {
+    return new KroomboxError(
+      'Terlalu banyak permintaan ke layanan RAG. Tunggu sebentar lalu coba lagi.',
+      429,
+    );
+  }
+  let detail: unknown;
+  try {
+    detail = ((await res.json()) as { detail?: unknown }).detail;
+  } catch {
+    detail = null;
+  }
+  const msg = firstValidationMessage(detail);
+  if (res.status === 422 && msg) {
+    return new KroomboxError(`Permintaan ditolak layanan RAG: ${msg}`, 422);
+  }
+  return new KroomboxError(`Layanan RAG sedang bermasalah (HTTP ${res.status}).`, res.status);
 }
 
 /**

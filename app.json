@@ -2,7 +2,7 @@
   "expo": {
     "name": "sorgumcore",
     "slug": "sorgumcore",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -12,7 +12,7 @@
         "backgroundColor": "#FFF3E6"
       },
       "package": "com.dey.bimabydey",
-      "versionCode": 4,
+      "versionCode": 5,
       "permissions": ["android.permission.RECORD_AUDIO"]
     },
     "ios": {

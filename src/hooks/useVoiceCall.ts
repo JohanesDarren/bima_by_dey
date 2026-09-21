@@ -21,6 +21,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   const listenersRef = useRef<EventSubscription[]>([]);
   const moduleRef = useRef<SpeechModule | null>(null);
   const activeRef = useRef(false);
+  const mutedRef = useRef(false);
   const processingRef = useRef(false);
   const segmentRef = useRef(segment);
   const recipeRef = useRef({ recipeName, stepLabel });
@@ -50,6 +51,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
 
   const stopCall = useCallback(async () => {
     activeRef.current = false;
+    mutedRef.current = false;
     processingRef.current = false;
     setState('idle');
     Speech.stop();
@@ -101,7 +103,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   }, []);
 
   const startListening = useCallback(async () => {
-    if (!activeRef.current) return;
+    if (!activeRef.current || mutedRef.current) return;
     cleanupListeners();
     const speechModule = await loadModule();
     if (!speechModule || !activeRef.current) {
@@ -137,7 +139,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
       const resultSubscription = speechModule.addListener(
         'result',
         (event: ExpoSpeechRecognitionResultEvent) => {
-          if (!activeRef.current) return;
+          if (!activeRef.current || mutedRef.current) return;
           const text = event.results[0]?.transcript ?? '';
           setTranscript(text);
           if (event.isFinal && text.trim()) {
@@ -161,7 +163,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
       );
       const endSubscription = speechModule.addListener('end', () => {
         setTimeout(() => {
-          if (activeRef.current && !processingRef.current) {
+          if (activeRef.current && !mutedRef.current && !processingRef.current) {
             listenRef.current().catch(() => undefined);
           }
         }, 500);
@@ -182,7 +184,26 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
 
   const startCall = useCallback(async () => {
     activeRef.current = true;
+    mutedRef.current = false;
     await startListening();
+  }, [startListening]);
+
+  const pauseMic = useCallback(() => {
+    mutedRef.current = true;
+    try {
+      moduleRef.current?.abort();
+    } catch {
+      // Recognizer may already be stopped.
+    }
+    cleanupListeners();
+    if (activeRef.current) setState('idle');
+  }, [cleanupListeners]);
+
+  const resumeMic = useCallback(() => {
+    mutedRef.current = false;
+    if (activeRef.current) {
+      startListening().catch(() => undefined);
+    }
   }, [startListening]);
 
   useEffect(
@@ -200,5 +221,5 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
     [cleanupListeners],
   );
 
-  return { state, transcript, aiResponse, errorMsg, startCall, stopCall };
+  return { state, transcript, aiResponse, errorMsg, startCall, stopCall, pauseMic, resumeMic };
 }

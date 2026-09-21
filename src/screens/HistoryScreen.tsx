@@ -6,6 +6,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { listCookHistory } from '../services/history';
 import type { HistorySession } from '../services/history';
 import { useFlowStore } from '../store/flowStore';
+import { ScreenHeader } from '../components/ScreenHeader';
 import { colors, radius, spacing, typography } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -37,13 +38,7 @@ export function HistoryScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>← Kembali</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Riwayat Masak</Text>
-        <View style={{ width: 70 }} />
-      </View>
+      <ScreenHeader title="Riwayat Masak" onBack={() => navigation.goBack()} />
 
       <FlatList
         data={sessions}
@@ -88,19 +83,6 @@ export function HistoryScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  backBtn: { paddingVertical: spacing.sm, paddingRight: spacing.md, minWidth: 70 },
-  backBtnText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
-  headerTitle: { ...typography.h3, color: colors.text },
   list: { padding: spacing.lg, flexGrow: 1 },
   card: {
     backgroundColor: colors.surface,

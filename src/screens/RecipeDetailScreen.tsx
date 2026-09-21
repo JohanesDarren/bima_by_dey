@@ -4,13 +4,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
 import { Container } from '../components/Container';
+import { ScreenHeader } from '../components/ScreenHeader';
 import { AICompanion } from '../components/AICompanion';
 import { VoiceCallModal } from '../components/VoiceCallModal';
 import { useAuthStore } from '../store/authStore';
@@ -35,17 +35,22 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
   const [voiceCallVisible, setVoiceCallVisible] = useState(false);
   const recipe = activeRecipe;
 
+  const reload = React.useCallback(() => {
+    if (!menu) return;
+    setLoading(true);
+    setError(null);
+    loadRecipe(menu, useFlowStore.getState().segment)
+      .then((loaded) => {
+        if (!loaded) setError(useFlowStore.getState().menusError || 'Resep RAG belum tersedia.');
+      })
+      .finally(() => setLoading(false));
+  }, [menu, loadRecipe]);
+
   useEffect(() => {
     // Dari Browse: menu diberikan → ambil resep (bila belum cocok dgn aktif).
     if (!menu) return;
     if (!recipe || recipe.name !== menu.name) {
-      setLoading(true);
-      setError(null);
-      loadRecipe(menu, segment)
-        .then((loaded) => {
-          if (!loaded) setError(useFlowStore.getState().menusError || 'Resep RAG belum tersedia.');
-        })
-        .finally(() => setLoading(false));
+      reload();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menu?.name]);
@@ -63,13 +68,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>← Kembali</Text>
-        </TouchableOpacity>
-        <Text style={styles.navTitle}>Resep</Text>
-        <View style={{ width: 70 }} />
-      </View>
+      <ScreenHeader title="Resep" onBack={() => navigation.goBack()} />
 
       {loading ? (
         <View style={styles.centerBox}>
@@ -82,6 +81,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
           <Text style={styles.centerText}>
             Jawaban hanya ditampilkan ketika layanan RAG tersedia.
           </Text>
+          <Button title="Coba lagi" onPress={reload} style={styles.retryBtn} />
         </View>
       ) : displayRecipe ? (
         <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
@@ -177,19 +177,6 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
-  navBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  backBtn: { paddingVertical: spacing.sm, paddingRight: spacing.md, minWidth: 70 },
-  backBtnText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
-  navTitle: { ...typography.h3, color: colors.text },
   content: { paddingVertical: spacing.lg, paddingBottom: spacing.xxl },
   placeholder: { textAlign: 'center', marginTop: spacing.xxl, color: colors.textMuted },
   centerBox: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl },
@@ -233,6 +220,7 @@ const styles = StyleSheet.create({
   stepTimer: { color: colors.primary, fontWeight: '600' },
   stepInstr: { ...typography.bodySm, color: colors.textMuted, marginTop: 2 },
   cta: { marginTop: spacing.xl },
+  retryBtn: { marginTop: spacing.lg, minWidth: 180 },
   muted: { color: colors.textMuted },
   mutedCenter: {
     color: colors.textMuted,

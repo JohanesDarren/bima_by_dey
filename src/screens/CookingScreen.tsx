@@ -40,6 +40,16 @@ export function CookingScreen({ navigation, route }: Props) {
   const step = steps[stepIdx];
   const isLast = stepIdx === steps.length - 1;
 
+  // Bersihkan timer + TTS saat layar ditinggalkan (cegah bocor audio/interval).
+  useEffect(
+    () => () => {
+      clearTimer();
+      Speech.stop();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   // Start/reset timer ketika step berubah & step punya durasi.
   useEffect(() => {
     clearTimer();

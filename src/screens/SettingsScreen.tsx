@@ -14,6 +14,10 @@ import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const APP_VERSION =
+  (require('../../app.json') as { expo?: { version?: string } }).expo?.version ?? '';
+
 /** Settings — logout, segmentasi, riwayat, wipe local data. */
 export function SettingsScreen({ navigation }: Props) {
   const profile = useProfileStore((s) => s.profile);
@@ -80,7 +84,7 @@ export function SettingsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.infoText}>sorgumcore v1.0.0</Text>
+          <Text style={styles.infoText}>sorgumcore v{APP_VERSION}</Text>
           <Text style={styles.infoSub}>Sorghum AI Nutritionist — prototype akademik</Text>
         </View>
 

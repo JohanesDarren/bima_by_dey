@@ -1,4 +1,4 @@
-import { chatKroombox, extractJson, extractJsonArray } from './kroombox';
+import { KroomboxError, chatKroombox, extractJson, extractJsonArray } from './kroombox';
 import type { FoodCategory, MenuItem, Recipe, RecipeRequest, Segment } from '../types';
 
 const CATEGORY_LABEL: Record<FoodCategory, string> = {
@@ -116,6 +116,7 @@ export async function getRecommendedMenus(seg: Segment, count = 5): Promise<Menu
       if (parsed) return normMenu(parsed);
     } catch (error) {
       lastError = error;
+      if (error instanceof KroomboxError && error.status === 429) break;
     }
   }
   if (lastError instanceof Error) throw lastError;
@@ -141,6 +142,7 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
       }
     } catch (error) {
       lastError = error;
+      if (error instanceof KroomboxError && error.status === 429) break;
     }
   }
   const parsed = extractJson<Recipe>(raw);
@@ -168,6 +170,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
       if (parsed) return normMenu(parsed);
     } catch (error) {
       lastError = error;
+      if (error instanceof KroomboxError && error.status === 429) break;
     }
   }
   if (lastError instanceof Error) throw lastError;
