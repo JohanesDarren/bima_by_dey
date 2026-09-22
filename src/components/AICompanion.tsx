@@ -11,9 +11,12 @@ import {
 } from 'react-native';
 import * as Speech from 'expo-speech';
 import { MaterialIcons } from '@expo/vector-icons';
+import { FormattedText } from './FormattedText';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/kroombox';
+import { buildChefHistory, buildChefMessage } from '../utils/chefPrompt';
+import { cleanAssistantAnswer } from '../utils/cleanText';
 
 interface Props {
   context: string;
@@ -52,9 +55,20 @@ export function AICompanion({
     [],
   );
 
+  useEffect(() => {
+    streamRef.current?.close();
+    streamRef.current = null;
+    Speech.stop();
+    setMessages([]);
+    setInput('');
+    setStreaming(false);
+    setLastQuestion('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recipeName]);
+
   const speak = useCallback((text: string) => {
     Speech.stop();
-    Speech.speak(text.replace(/[*#_`]/g, ''), { language: 'id-ID', rate: 0.95 });
+    Speech.speak(cleanAssistantAnswer(text), { language: 'id-ID', rate: 0.95 });
   }, []);
 
   const send = useCallback(
@@ -71,7 +85,14 @@ export function AICompanion({
       setStreaming(true);
 
       streamRef.current = streamKroomboxChat(
-        { message: `${context}\n\nPertanyaan user: ${text}`, useRag: true, stream: true },
+        {
+          // Aturan Chef (panjang & fokus jawaban) + riwayat percakapan supaya
+          // pertanyaan lanjutan nyambung — lihat utils/chefPrompt.ts.
+          message: buildChefMessage(context, text),
+          history: buildChefHistory(messages),
+          useRag: true,
+          stream: true,
+        },
         {
           onToken: (delta) =>
             setMessages((current) => {
@@ -113,7 +134,7 @@ export function AICompanion({
         },
       );
     },
-    [autoSpeak, context, input, onAssistantMessage, speak, streaming],
+    [autoSpeak, context, input, messages, onAssistantMessage, speak, streaming],
   );
 
   const stop = () => {
@@ -210,6 +231,9 @@ export function AICompanion({
           style={styles.messages}
           contentContainerStyle={styles.messagesContent}
           keyboardShouldPersistTaps="handled"
+          // Panel ini berada di dalam ScrollView layar (Resep/Masak). Di Android,
+          // gulir anak tanpa penanda ini tidak jalan — sentuhan "diambil" induknya.
+          nestedScrollEnabled
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
           {messages.length === 0 ? (
@@ -235,11 +259,15 @@ export function AICompanion({
                     message.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant,
                   ]}
                 >
-                  <Text
+                  <FormattedText
+                    text={
+                      (message.role === 'assistant'
+                        ? cleanAssistantAnswer(message.content)
+                        : message.content) || '…'
+                    }
                     style={[styles.bubbleText, message.role === 'user' && styles.bubbleTextUser]}
-                  >
-                    {message.content || '…'}
-                  </Text>
+                    onDarkBubble={message.role === 'user'}
+                  />
                 </View>
               </View>
             ))

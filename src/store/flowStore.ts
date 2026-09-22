@@ -43,23 +43,34 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   loadRecommendedMenus: async (segment) => {
     set({ loadingMenus: true, menusError: null });
     try {
-      const menus = await getRecommendedMenus(segment, 5);
+      // Baca sambil jalan: kartu muncul begitu ada menu yang sudah lengkap.
+      const menus = await getRecommendedMenus(segment, {
+        onPartial: (partial) => set({ menus: partial, loadingMenus: false }),
+      });
       set({ menus, loadingMenus: false, segment });
     } catch (e) {
-      set({
-        loadingMenus: false,
-        menusError: (e as Error).message,
-      });
+      // Sebagian menu sudah tampil → jangan diganti kotak error.
+      if (get().menus.length > 0) set({ loadingMenus: false });
+      else {
+        set({
+          loadingMenus: false,
+          menusError: (e as Error).message,
+        });
+      }
     }
   },
 
   doSearch: async (query, segment, category) => {
     set({ loadingMenus: true, menusError: null });
     try {
-      const menus = await searchRecipes({ query, segment, category });
+      const menus = await searchRecipes(
+        { query, segment, category },
+        { onPartial: (partial) => set({ menus: partial, loadingMenus: false }) },
+      );
       set({ menus, loadingMenus: false, segment, category });
     } catch (e) {
-      set({ loadingMenus: false, menusError: (e as Error).message });
+      if (get().menus.length > 0) set({ loadingMenus: false });
+      else set({ loadingMenus: false, menusError: (e as Error).message });
     }
   },
 

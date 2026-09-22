@@ -1,11 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
@@ -17,20 +11,39 @@ import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
+import type { MenuItem } from '../types';
+import { cleanFoodText } from '../utils/cleanText';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RecipeDetail'>;
+
+/**
+ * Menu dianggap sama bila objeknya sama, atau namanya sama setelah spasi dan
+ * besar-kecil huruf diabaikan.
+ *
+ * Kenapa tidak membandingkan `recipe.name === menu.name` secara persis: nama pada
+ * jawaban AI bisa berbeda tipis dari nama menu (tambah kata, spasi tersembunyi,
+ * huruf besar/kecil). Dulu itu membuat resep yang SUDAH berhasil dimuat dibuang,
+ * dan layar menampilkan "Resep RAG belum tersedia." tanpa sebab yang jelas.
+ */
+function isSameMenu(a: MenuItem | null, b: MenuItem | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.name.trim().toLowerCase() === b.name.trim().toLowerCase();
+}
 
 /** Detail resep lengkap: bahan + langkah + mulai masak (alur step-by-step). */
 export function RecipeDetailScreen({ navigation, route }: Props) {
   const { menu } = route.params ?? {};
   const segment = useFlowStore((s) => s.segment);
   const activeRecipe = useFlowStore((s) => s.activeRecipe);
+  const activeMenu = useFlowStore((s) => s.activeMenu);
   const loadRecipe = useFlowStore((s) => s.loadRecipe);
   const isGuest = useAuthStore((s) => s.isGuest);
 
-  const [loading, setLoading] = useState(() =>
-    Boolean(menu && (!activeRecipe || activeRecipe.name !== menu.name)),
-  );
+  // Resep aktif dipakai hanya kalau memang dimuat untuk menu yang dibuka ini.
+  const recipeFitsMenu = isSameMenu(activeMenu, menu);
+
+  const [loading, setLoading] = useState(() => Boolean(menu && !recipeFitsMenu));
   const [error, setError] = useState<string | null>(null);
   const [voiceCallVisible, setVoiceCallVisible] = useState(false);
   const recipe = activeRecipe;
@@ -47,9 +60,10 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
   }, [menu, loadRecipe]);
 
   useEffect(() => {
-    // Dari Browse: menu diberikan → ambil resep (bila belum cocok dgn aktif).
+    // Dari Browse: ambil resep bila resep aktif bukan untuk menu ini.
     if (!menu) return;
-    if (!recipe || recipe.name !== menu.name) {
+    const { activeRecipe: nowRecipe, activeMenu: nowMenu } = useFlowStore.getState();
+    if (!nowRecipe || !isSameMenu(nowMenu, menu)) {
       reload();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,7 +78,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const displayRecipe = menu ? (recipe?.name === menu.name ? recipe : null) : recipe;
+  const displayRecipe = menu ? (recipeFitsMenu ? recipe : null) : recipe;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -107,7 +121,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
                 displayRecipe.ingredients.map((ing, i) => (
                   <Text key={i} style={styles.ingredient}>
                     {'• '}
-                    {ing}
+                    {cleanFoodText(ing, { notes: 'all' })}
                   </Text>
                 ))
               )}
@@ -122,12 +136,12 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
                   </View>
                   <View style={styles.stepBody}>
                     <Text style={styles.stepTitle}>
-                      {s.title}
+                      {cleanFoodText(s.title, { maxLength: 60 })}
                       {s.durationMinutes ? (
                         <Text style={styles.stepTimer}> · ⏱ {s.durationMinutes} menit</Text>
                       ) : null}
                     </Text>
-                    <Text style={styles.stepInstr}>{s.instruction}</Text>
+                    <Text style={styles.stepInstr}>{cleanFoodText(s.instruction)}</Text>
                   </View>
                 </View>
               ))}

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import type { MenuItem } from '../types';
+import { cleanFoodText } from '../utils/cleanText';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -56,7 +57,7 @@ export function MenuCard({ menu, onPress, featured = false }: Props) {
             {menu.name}
           </Text>
           <Text style={[styles.desc, featured && styles.descFeatured]} numberOfLines={2}>
-            {menu.description}
+            {cleanFoodText(menu.description, { maxLength: 200 })}
           </Text>
         </View>
       </Pressable>
@@ -103,13 +104,17 @@ export function MenuCard({ menu, onPress, featured = false }: Props) {
           {menu.strengths.slice(0, 2).map((item, index) => (
             <View key={`s-${index}`} style={styles.noteRow}>
               <MaterialIcons name="check-circle" size={16} color={colors.success} />
-              <Text style={[styles.note, featured && styles.lightOnDark]}>{item}</Text>
+              <Text style={[styles.note, featured && styles.lightOnDark]}>
+                {cleanFoodText(item, { maxLength: 80 })}
+              </Text>
             </View>
           ))}
           {menu.weaknesses.slice(0, 2).map((item, index) => (
             <View key={`w-${index}`} style={styles.noteRow}>
               <MaterialIcons name="info-outline" size={16} color={colors.accent} />
-              <Text style={[styles.note, featured && styles.lightOnDark]}>{item}</Text>
+              <Text style={[styles.note, featured && styles.lightOnDark]}>
+                {cleanFoodText(item, { maxLength: 80 })}
+              </Text>
             </View>
           ))}
           <Pressable onPress={onPress} style={styles.openButton} accessibilityRole="button">

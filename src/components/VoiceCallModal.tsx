@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { cleanAssistantAnswer, stripMarkdown } from '../utils/cleanText';
 import { colors, radius, spacing, typography } from '../theme';
 import { useVoiceCall } from '../hooks/useVoiceCall';
 import type { Segment } from '../types';
@@ -150,11 +151,11 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
               </>
             ) : state === 'speaking' ? (
               <Text style={styles.transcript} numberOfLines={4}>
-                {aiResponse}
+                {cleanAssistantAnswer(aiResponse)}
               </Text>
             ) : transcript ? (
               <Text style={styles.transcript} numberOfLines={2}>
-                {transcript}
+                {stripMarkdown(transcript)}
               </Text>
             ) : null}
           </View>

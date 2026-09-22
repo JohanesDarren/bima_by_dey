@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 
 /**
@@ -17,7 +18,9 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    // Keep the JS client alive so sessions persist across cold starts.
+    // Sesi harus survive restart — tanpa storage adapter, auth-js hanya
+    // memakai memori dan user dianggap logout setiap cold start.
+    storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
