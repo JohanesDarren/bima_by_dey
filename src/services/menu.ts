@@ -83,6 +83,9 @@ function promptRecipe(menuName: string, seg: Segment): string {
     '- Pecah resep menjadi langkah detail (5-10 langkah) yang bisa diikuti selangkah demi selangkah.',
     '- durationMinutes: isi angka menit bila langkah butuh waktu (misal merebus 10 menit, mengungkep 30 menit); null bila instan.',
     '- Sesuaikan porsi, tekstur, dan bumbu dengan segmentasi.',
+    '- Bahan: SATU baris = nama bahan + jumlah + satuan. DILARANG menulis tanda kurung, angka persen, atau keterangan di belakang bahan. Contoh benar: "150 g tepung sorgum". Contoh salah: "150 g tepung sorgum (±55% dari tepung)".',
+    '- Pakai nama bahan yang lazim di dapur, bukan nama ilmiah atau kode.',
+    '- instruction: satu sampai dua kalimat praktis; sebutkan api, alat, atau tingkat kematangan bila perlu.',
   ].join('\n');
 }
 
@@ -96,6 +99,8 @@ function promptSearchRecipe(seg: Segment, category: FoodCategory, excludedNames:
       ? `JANGAN ulangi menu berikut: ${excludedNames.map((name) => `"${name}"`).join(', ')}.`
       : '',
     'Ketiga nama menu harus berbeda satu sama lain.',
+    'description: maksimal 2 kalimat pendek (sekitar 25 kata), tanpa tanda kurung dan tanpa angka persen.',
+    'strengths dan weaknesses: maksimal 8 kata per butir.',
     '',
     'Jawab HANYA JSON array (tanpa teks lain, tanpa markdown fence):',
     '[{"name": string, "description": string, "nutrition": {calories, protein, fiber, key_vitamins, minerals, notes}, "strengths": [string], "weaknesses": [string], "category": "main_course|soup|dessert|snack|beverage|other"}]',

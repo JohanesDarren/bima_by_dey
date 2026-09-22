@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,6 +16,7 @@ import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/kroombox';
 import { cleanAssistantText } from '../utils/assistantText';
+import { buildChefHistory } from '../utils/chefPrompt';
 
 interface Props {
   context: string;
@@ -46,6 +48,27 @@ export function AICompanion({
   const [lastQuestion, setLastQuestion] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const streamRef = useRef<{ close: () => void } | null>(null);
+  /** Keyboard terbuka → panel chat yang mengisi seluruh ruang sisa layar. */
+  const [keyboardUp, setKeyboardUp] = useState(false);
+
+  /**
+   * Kenapa begini, bukan sekadar "gulir ke bawah saat keyboard muncul": panel ini
+   * berada di dalam guliran layar, dan jendela Android berubah ukuran SETELAH
+   * perintah gulir berjalan — jadi posisinya meleset dan kolom tulis tetap
+   * tertutup. Di sini tidak ada tebakan waktu: saat keyboard muncul, panel dipaksa
+   * mengisi ruang sisa (flex), sehingga kolom tulis selalu tepat di atas keyboard.
+   */
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardUp(true);
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardUp(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(
     () => () => {
@@ -79,10 +102,20 @@ export function AICompanion({
           message: [
             context,
             `Pertanyaan pengguna: ${text}`,
-            'Jawab lengkap tetapi langsung ke inti dan masuk akal berdasarkan RAG.',
+            // Aturan pokok milik Johanes dipertahankan. Empat baris di bawah tambahan
+            // kita: tanpa batas panjang + "jawab lengkap", jawaban Chef melebar
+            // (mis. ditanya "bisa kalau tepung tidak disangrai?" dijawab cerita
+            // panjang ke sana-sini). Batas panjang hanya bisa ditekan lewat prompt —
+            // API RAG tidak menerima kolom batas token.
+            'Jawab langsung ke inti berdasarkan RAG: awali dengan jawabannya, bukan penjelasan panjang.',
             'Gunakan paragraf biasa. Jangan gunakan emoji, logo, emblem, ikon, markdown, heading, atau simbol dekoratif.',
             'Hindari pembuka, pengulangan pertanyaan, dan penutup basa-basi yang tidak perlu.',
+            'Maksimal 60 kata. Tanpa salam, tanpa pendahuluan, dan tanpa mengulang resep atau bahan yang sudah dibahas.',
+            'Hanya bahas yang ditanya. Jangan menambah saran gizi, tips, atau topik lain yang tidak diminta.',
+            'Kalau pertanyaan bisa dijawab ya/tidak: mulai dengan ya/tidak lalu satu alasan singkat. Kalau memang perlu langkah, tulis maksimal 3 poin pendek.',
           ].join('\n\n'),
+          // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
+          history: buildChefHistory(messages),
           useRag: true,
           stream: true,
         },
@@ -133,7 +166,9 @@ export function AICompanion({
         },
       );
     },
-    [autoSpeak, context, input, onAssistantMessage, speak, streaming],
+    // `messages` ikut jadi dependensi: riwayat percakapan dibangun saat kirim,
+    // jadi kalau tidak, yang terkirim bisa riwayat dari render lama (basi).
+    [autoSpeak, context, input, messages, onAssistantMessage, speak, streaming],
   );
 
   const stop = () => {
@@ -143,8 +178,18 @@ export function AICompanion({
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[styles.panel, compact && styles.panelCompact, elevation.sm]}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={keyboardUp ? styles.fill : undefined}
+    >
+      <View
+        style={[
+          styles.panel,
+          compact && styles.panelCompact,
+          keyboardUp && styles.fill,
+          elevation.sm,
+        ]}
+      >
         <View style={[styles.recipeCard, simple && styles.hidden]}>
           <View style={styles.recipeInitials}>
             <Text style={styles.recipeInitialsText}>
@@ -227,8 +272,9 @@ export function AICompanion({
 
         <ScrollView
           ref={scrollRef}
-          style={styles.messages}
+          style={[styles.messages, keyboardUp && styles.messagesKeyboard]}
           contentContainerStyle={styles.messagesContent}
+          nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
@@ -434,6 +480,9 @@ const styles = StyleSheet.create({
   },
   speakToggleOn: { backgroundColor: colors.accent },
   messages: { maxHeight: 280, minHeight: 130 },
+  /** Keyboard terbuka: panel & daftar pesan mengisi ruang sisa, bukan tinggi tetap. */
+  fill: { flex: 1 },
+  messagesKeyboard: { flex: 1, minHeight: 96, maxHeight: 9999 },
   messagesContent: { padding: spacing.md },
   tip: {
     borderLeftWidth: 3,

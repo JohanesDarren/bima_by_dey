@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
-import { streamKroomboxChat } from '../services/kroombox';
+import { streamKroomboxChat, type HistoryEntry } from '../services/kroombox';
 import { cleanAssistantText } from '../utils/assistantText';
+import { VOICE_HISTORY_LIMIT } from '../utils/chefPrompt';
 import type { Segment } from '../types';
 import type {
   ExpoSpeechRecognitionErrorEvent,
@@ -26,6 +27,8 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   const segmentRef = useRef(segment);
   const recipeRef = useRef({ recipeName, stepLabel });
   const listenRef = useRef<() => Promise<void>>(async () => undefined);
+  /** Riwayat percakapan suara (dikirim ke API supaya lanjutan nyambung). */
+  const historyRef = useRef<HistoryEntry[]>([]);
   const voiceRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
@@ -64,6 +67,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   const stopCall = useCallback(async () => {
     activeRef.current = false;
     processingRef.current = false;
+    historyRef.current = [];
     streamRef.current?.close();
     streamRef.current = null;
     setState('idle');
@@ -98,8 +102,11 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
             `Pertanyaan: ${text}`,
             'Jawab berdasarkan RAG. Langsung jawab inti pertanyaan dalam maksimal 2 kalimat pendek.',
             'Tanpa pembuka, pengulangan pertanyaan, daftar, markdown, emoji, simbol dekoratif, atau penutup basa-basi.',
+            'Bulatkan angka dan tulis dengan kata; hindari simbol yang janggal diucapkan mesin suara seperti %, /, dan ±.',
             'Jika RAG tidak mendukung jawaban, katakan singkat dan jujur.',
           ].join('\n'),
+          // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
+          history: historyRef.current,
           useRag: true,
           stream: true,
         },
@@ -117,6 +124,12 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
               setErrorMsg('Jawaban suara belum tersedia. Coba lagi.');
               return;
             }
+            // Simpan giliran ini supaya pertanyaan berikutnya masih nyambung.
+            const turns: HistoryEntry[] = [
+              { role: 'user', content: text },
+              { role: 'assistant', content: response },
+            ];
+            historyRef.current = [...historyRef.current, ...turns].slice(-VOICE_HISTORY_LIMIT);
             setState('speaking');
             Speech.speak(spoken, {
               language: 'id-ID',

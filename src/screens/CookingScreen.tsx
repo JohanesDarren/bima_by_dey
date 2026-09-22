@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Keyboard, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -34,6 +34,24 @@ export function CookingScreen({ navigation, route }: Props) {
   const [notes, setNotes] = useState<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  /** Keyboard terbuka → layar berhenti menggulir, panel chat yang mengisi. */
+  const [keyboardUp, setKeyboardUp] = useState(false);
+
+  /**
+   * Saat keyboard muncul: langkah & catatan disembunyikan sementara, guliran
+   * layar dimatikan, dan panel chat diberi seluruh tinggi yang tersisa. Dengan
+   * begitu kolom tulis + tombol kirim selalu berada tepat di atas keyboard —
+   * tidak bergantung pada waktu gulir-otomatis (pendekatan lama: kadang masih
+   * terpotong karena jendela berubah ukuran setelah guliran terjadi).
+   */
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardUp(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardUp(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const steps: RecipeStep[] = recipe?.steps ?? [];
   const step = steps[stepIdx];
@@ -135,9 +153,15 @@ export function CookingScreen({ navigation, route }: Props) {
         </View>
       </View>
 
-      <ScrollView ref={scrollRef} style={styles.flex} contentContainerStyle={styles.content}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.flex}
+        scrollEnabled={!keyboardUp}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.content, keyboardUp && styles.contentKeyboard]}
+      >
         {/* Step aktif */}
-        {step ? (
+        {step && !keyboardUp ? (
           <View style={[styles.stepCard, elevation.sm]}>
             <View style={styles.stepHeader}>
               <View style={styles.stepNumBig}>
@@ -226,7 +250,9 @@ export function CookingScreen({ navigation, route }: Props) {
           onAssistantMessage={(t) => setNotes((n) => [...n, t])}
         />
 
-        {isGuest ? <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text> : null}
+        {isGuest && !keyboardUp ? (
+          <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text>
+        ) : null}
       </ScrollView>
 
       {voiceCallVisible ? (
@@ -264,6 +290,8 @@ const styles = StyleSheet.create({
   headerTitle: { ...typography.body, color: colors.text, fontWeight: '800' },
   headerSub: { fontSize: 12, color: colors.textMuted },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  /** Saat keyboard terbuka: isi pas setinggi ruang sisa, jadi panel chat dapat flex:1. */
+  contentKeyboard: { flex: 1, padding: spacing.md, paddingBottom: spacing.md },
   stepCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,

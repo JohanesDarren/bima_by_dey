@@ -13,9 +13,25 @@ import { Button } from '../components/Button';
 import { Container } from '../components/Container';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
+import { menuKey } from '../utils/menuKey';
+import { cleanFoodText } from '../utils/cleanText';
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RecipeDetail'>;
+
+/**
+ * Resep dianggap cocok dengan menu yang dibuka bila KUNCINYA sama — spasi, tanda
+ * baca, dan besar-kecil huruf diabaikan (utils/menuKey.ts).
+ *
+ * Kenapa tidak membandingkan nama secara persis: nama pada jawaban AI bisa
+ * berbeda tipis dari nama menu (tambah kata, tanda hubung, spasi ganda). Dulu itu
+ * membuat resep yang SUDAH berhasil dimuat dibuang, dan layar menampilkan
+ * "Resep RAG belum tersedia." tanpa sebab yang jelas.
+ */
+function sameMenu(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  return menuKey(a) === menuKey(b);
+}
 
 /** Detail resep lengkap: bahan + langkah + mulai masak (alur step-by-step). */
 export function RecipeDetailScreen({ navigation, route }: Props) {
@@ -25,7 +41,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
   const loadRecipe = useFlowStore((s) => s.loadRecipe);
 
   const [loading, setLoading] = useState(() =>
-    Boolean(menu && (!activeRecipe || activeRecipe.name !== menu.name)),
+    Boolean(menu && (!activeRecipe || !sameMenu(activeRecipe.name, menu.name))),
   );
   const [error, setError] = useState<string | null>(null);
   const recipe = activeRecipe;
@@ -33,7 +49,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
   useEffect(() => {
     // Dari Browse: menu diberikan → ambil resep (bila belum cocok dgn aktif).
     if (!menu) return;
-    if (!recipe || recipe.name !== menu.name) {
+    if (!sameMenu(recipe?.name, menu.name)) {
       setLoading(true);
       setError(null);
       loadRecipe(menu, segment)
@@ -54,7 +70,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const displayRecipe = menu ? (recipe?.name === menu.name ? recipe : null) : recipe;
+  const displayRecipe = menu ? (sameMenu(recipe?.name, menu.name) ? recipe : null) : recipe;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -102,7 +118,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
                 displayRecipe.ingredients.map((ing, i) => (
                   <Text key={i} style={styles.ingredient}>
                     {'• '}
-                    {ing}
+                    {cleanFoodText(ing, { notes: 'all' })}
                   </Text>
                 ))
               )}
@@ -117,12 +133,12 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
                   </View>
                   <View style={styles.stepBody}>
                     <Text style={styles.stepTitle}>
-                      {s.title}
+                      {cleanFoodText(s.title, { maxLength: 60 })}
                       {s.durationMinutes ? (
                         <Text style={styles.stepTimer}> · ⏱ {s.durationMinutes} menit</Text>
                       ) : null}
                     </Text>
-                    <Text style={styles.stepInstr}>{s.instruction}</Text>
+                    <Text style={styles.stepInstr}>{cleanFoodText(s.instruction)}</Text>
                   </View>
                 </View>
               ))}
