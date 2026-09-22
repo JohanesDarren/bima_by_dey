@@ -145,10 +145,61 @@ export interface ChatResponse {
 }
 
 /**
+ * Collect an SSE response into one string. Structured RAG generations can take
+ * over a minute; streaming keeps the proxy connection active and avoids a
+ * gateway 502 while still returning one parseable payload to callers.
+ */
+function collectKroomboxStream(req: StreamRequest): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let text = '';
+    let settled = false;
+    let stream: ReturnType<typeof streamKroomboxChat> | null = null;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      stream?.close();
+      callback();
+    };
+    const timeout = setTimeout(
+      () =>
+        finish(() => reject(new KroomboxError('Layanan RAG terlalu lama merespons. Coba lagi.'))),
+      180_000,
+    );
+
+    try {
+      stream = streamKroomboxChat(
+        { ...req, stream: true },
+        {
+          onToken: (token) => {
+            text += token;
+          },
+          onDone: () =>
+            finish(() => {
+              if (!text.trim()) {
+                reject(new KroomboxError('Layanan RAG mengembalikan jawaban kosong. Coba lagi.'));
+                return;
+              }
+              resolve(text);
+            }),
+          onError: (error) => finish(() => reject(error)),
+        },
+      );
+      if (settled) stream.close();
+    } catch (error) {
+      finish(() =>
+        reject(error instanceof Error ? error : new KroomboxError('Layanan RAG gagal dimulai.')),
+      );
+    }
+  });
+}
+
+/**
  * Panggil /api/chat NON-streaming (fetch biasa). Dipakai saat butuh respons
  * utuh yang mudah diparse (menu andalan, resep step-by-step).
  */
 export async function chatKroombox(req: StreamRequest): Promise<string> {
+  if (req.stream) return collectKroomboxStream(req);
   const url = `${KROOMBOX_BASE_URL}${KROOMBOX_CHAT_ENDPOINT}`;
   try {
     const res = await fetch(url, {

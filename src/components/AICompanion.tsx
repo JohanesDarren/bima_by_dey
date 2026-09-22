@@ -21,6 +21,7 @@ interface Props {
   recipeMeta?: string;
   placeholder?: string;
   compact?: boolean;
+  simple?: boolean;
   onVoiceCall?: () => void;
   onAssistantMessage?: (text: string) => void;
 }
@@ -33,13 +34,14 @@ export function AICompanion({
   recipeMeta,
   placeholder,
   compact,
+  simple = false,
   onVoiceCall,
   onAssistantMessage,
 }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
-  const [autoSpeak, setAutoSpeak] = useState(true);
+  const [autoSpeak, setAutoSpeak] = useState(!simple);
   const [lastQuestion, setLastQuestion] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const streamRef = useRef<{ close: () => void } | null>(null);
@@ -125,7 +127,7 @@ export function AICompanion({
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.panel, compact && styles.panelCompact, elevation.sm]}>
-        <View style={styles.recipeCard}>
+        <View style={[styles.recipeCard, simple && styles.hidden]}>
           <View style={styles.recipeInitials}>
             <Text style={styles.recipeInitialsText}>
               {recipeName
@@ -167,11 +169,11 @@ export function AICompanion({
           </View>
         </View>
 
-        <View style={styles.dateRow}>
+        <View style={[styles.dateRow, simple && styles.hidden]}>
           <Text style={styles.dateText}>HARI INI</Text>
         </View>
 
-        <View style={styles.header}>
+        <View style={[styles.header, simple && styles.hidden]}>
           <View style={styles.identity}>
             <View style={styles.avatar}>
               <MaterialIcons name="grain" size={18} color={colors.primaryDark} />
@@ -253,6 +255,7 @@ export function AICompanion({
 
         <ScrollView
           horizontal
+          style={simple ? styles.hidden : undefined}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.suggestions}
           keyboardShouldPersistTaps="handled"
@@ -321,6 +324,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   panelCompact: { marginTop: spacing.sm },
+  hidden: { display: 'none' },
   recipeCard: {
     margin: spacing.md,
     marginBottom: spacing.sm,

@@ -1,142 +1,64 @@
-import React, { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import React from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
 import { AppGradient } from '../components/AppGradient';
-import { Button } from '../components/Button';
-import { FormField } from '../components/FormField';
 import { useAuthStore } from '../store/authStore';
-import { colors, radius, spacing } from '../theme';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../navigation/types';
+import { colors, radius, spacing, typography } from '../theme';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
-
-export function LoginScreen({ navigation }: Props) {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [fieldError, setFieldError] = useState<{ email?: string; password?: string }>({});
-  const signIn = useAuthStore((s) => s.signInWithEmail);
-  const signUp = useAuthStore((s) => s.signUpWithEmail);
-  const signInAsGuest = useAuthStore((s) => s.signInAsGuest);
-
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-  const validate = (): boolean => {
-    const fe: { email?: string; password?: string } = {};
-    if (!EMAIL_RE.test(email.trim())) fe.email = 'Format email tidak valid.';
-    if (password.length < 6) fe.password = 'Kata sandi minimal 6 karakter.';
-    setFieldError(fe);
-    return Object.keys(fe).length === 0;
-  };
-
-  const submit = async () => {
-    if (loading) return;
-    setError(null);
-    if (!validate()) return;
-    setLoading(true);
-    const fn = mode === 'login' ? signIn : signUp;
-    const res = await fn(email.trim(), password);
-    setLoading(false);
-    if (res.error) {
-      setError(res.error);
-    }
-    // If registered for the first time, Supabase may require email confirmation
-    // before the session exists — direct to Profile Setup next via auth state.
-  };
+export function LoginScreen() {
+  const signInAsGuest = useAuthStore((state) => state.signInAsGuest);
 
   return (
     <AppGradient style={styles.flex}>
-      <SafeAreaView style={styles.flex}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-            <Text style={styles.emoji}>🌾</Text>
-            <Text style={styles.heading}>{mode === 'login' ? 'Selamat Datang!' : 'Buat Akun'}</Text>
-            <Text style={styles.subheading}>
-              {mode === 'login'
-                ? 'Masuk untuk menyimpan profil dan riwayat chat kamu.'
-                : 'Daftar untuk mulai meracik resep sorgum sehat.'}
-            </Text>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.brandRow}>
+          <View style={styles.brandMark}>
+            <MaterialIcons name="grain" size={18} color={colors.primaryDark} />
+          </View>
+          <Text style={styles.brand}>sorgumcore</Text>
+        </View>
 
-            <View style={styles.card}>
-              <FormField
-                label="Email"
-                value={email}
-                onChangeText={(t) => {
-                  setEmail(t);
-                  setFieldError((f) => ({ ...f, email: undefined }));
-                }}
-                placeholder="nama@email.com"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-                error={fieldError.email}
-              />
-              <FormField
-                label="Kata Sandi"
-                value={password}
-                onChangeText={(t) => {
-                  setPassword(t);
-                  setFieldError((f) => ({ ...f, password: undefined }));
-                }}
-                placeholder="••••••••"
-                secureTextEntry
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                error={fieldError.password}
-              />
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              <Button
-                title={mode === 'login' ? 'Masuk' : 'Daftar'}
-                onPress={submit}
-                loading={loading}
-              />
-
-              <TouchableOpacity
-                style={styles.switchRow}
-                onPress={() => {
-                  setMode((m) => (m === 'login' ? 'register' : 'login'));
-                  setError(null);
-                  setFieldError({});
-                }}
-              >
-                <Text style={styles.switchText}>
-                  {mode === 'login' ? 'Belum punya akun? ' : 'Sudah punya akun? '}
-                  <Text style={styles.switchLink}>{mode === 'login' ? 'Daftar' : 'Masuk'}</Text>
-                </Text>
-              </TouchableOpacity>
-
-              <View style={styles.dividerRow}>
-                <View style={styles.divider} />
-                <Text style={styles.dividerText}>atau</Text>
-                <View style={styles.divider} />
-              </View>
-
-              <Button
-                title="Lanjut sebagai Tamu"
-                variant="ghost"
-                onPress={signInAsGuest}
-                disabled={loading}
-                style={styles.guestBtn}
-              />
-              <Text style={styles.guestNote}>
-                Mode tamu menyimpan data lokal di perangkat (MMKV) tanpa akun.
-              </Text>
+        <View style={styles.hero}>
+          <View style={styles.visual} accessibilityElementsHidden>
+            <View style={styles.haloLarge} />
+            <View style={styles.haloSmall} />
+            <View style={styles.heroMark}>
+              <MaterialIcons name="restaurant" size={54} color={colors.primaryDark} />
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
+            <View style={[styles.seed, styles.seedTop]}>
+              <MaterialIcons name="eco" size={20} color={colors.primaryDark} />
+            </View>
+            <View style={[styles.seed, styles.seedBottom]}>
+              <MaterialIcons name="grain" size={19} color={colors.primaryDark} />
+            </View>
+          </View>
+
+          <Text style={styles.eyebrow}>SELAMAT DATANG</Text>
+          <Text style={styles.title}>Masak sorgum,{`\n`}lebih yakin.</Text>
+          <Text style={styles.description}>
+            Temukan resep sesuai usia dan kebutuhan, lalu masak selangkah demi selangkah bersama
+            Chef AI.
+          </Text>
+        </View>
+
+        <View style={styles.bottom}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Mulai sebagai tamu"
+            onPress={signInAsGuest}
+            style={({ pressed }) => [styles.cta, pressed && styles.ctaPressed]}
+          >
+            <Text style={styles.ctaText}>Mulai sebagai tamu</Text>
+            <View style={styles.ctaIcon}>
+              <MaterialIcons name="arrow-forward" size={20} color={colors.primaryDark} />
+            </View>
+          </Pressable>
+          <View style={styles.privacyRow}>
+            <MaterialIcons name="phone-android" size={15} color="#D8E2DA" />
+            <Text style={styles.privacy}>Tanpa akun · Pilihan tersimpan di perangkat</Text>
+          </View>
+        </View>
       </SafeAreaView>
     </AppGradient>
   );
@@ -144,39 +66,110 @@ export function LoginScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { flexGrow: 1, justifyContent: 'center', padding: spacing.xl },
-  emoji: { fontSize: 56, textAlign: 'center', marginBottom: spacing.sm },
-  heading: {
-    color: colors.textOnPrimary,
-    fontSize: 26,
-    fontWeight: '800',
-    textAlign: 'center',
+  safe: { flex: 1, paddingHorizontal: spacing.xl, paddingTop: spacing.md },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  brandMark: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
   },
-  subheading: {
-    color: colors.textOnPrimary,
-    fontSize: 14,
-    textAlign: 'center',
-    opacity: 0.9,
-    marginTop: spacing.sm,
+  brand: { ...typography.h3, color: colors.textOnPrimary, fontSize: 20 },
+  hero: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingBottom: spacing.xl },
+  visual: {
+    width: 220,
+    height: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: spacing.xl,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-    shadowColor: colors.black,
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+  haloLarge: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    borderWidth: 1,
+    borderColor: 'rgba(250,246,240,0.16)',
   },
-  error: { color: colors.danger, marginBottom: spacing.md, fontSize: 13 },
-  switchRow: { marginTop: spacing.lg, alignItems: 'center' },
-  switchText: { color: colors.textMuted, fontSize: 14 },
-  switchLink: { color: colors.primary, fontWeight: '700' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.lg },
-  divider: { flex: 1, height: 1, backgroundColor: colors.border },
-  dividerText: { marginHorizontal: spacing.md, color: colors.textMuted, fontSize: 13 },
-  guestBtn: { borderColor: colors.primary },
-  guestNote: { color: colors.textMuted, fontSize: 12, textAlign: 'center', marginTop: spacing.sm },
+  haloSmall: {
+    position: 'absolute',
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: 'rgba(250,246,240,0.08)',
+  },
+  heroMark: {
+    width: 126,
+    height: 126,
+    borderRadius: 63,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#BDE5CF',
+    borderWidth: 7,
+    borderColor: 'rgba(250,246,240,0.28)',
+  },
+  seed: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderWidth: 3,
+    borderColor: colors.primary,
+  },
+  seedTop: { right: 17, top: 27 },
+  seedBottom: { left: 17, bottom: 29 },
+  eyebrow: {
+    ...typography.label,
+    color: colors.accent,
+    letterSpacing: 1.6,
+    marginBottom: spacing.sm,
+  },
+  title: {
+    ...typography.h1,
+    fontSize: 38,
+    lineHeight: 43,
+    color: colors.textOnPrimary,
+    textAlign: 'center',
+  },
+  description: {
+    ...typography.body,
+    color: '#D8E2DA',
+    textAlign: 'center',
+    maxWidth: 330,
+    marginTop: spacing.lg,
+  },
+  bottom: { paddingBottom: spacing.xl },
+  cta: {
+    minHeight: 60,
+    borderRadius: radius.lg,
+    paddingLeft: spacing.xl,
+    paddingRight: spacing.sm,
+    backgroundColor: colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  ctaPressed: { transform: [{ scale: 0.98 }], opacity: 0.9 },
+  ctaText: { fontSize: 16, fontWeight: '800', color: colors.primaryDark },
+  ctaIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.42)',
+  },
+  privacyRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.md,
+  },
+  privacy: { ...typography.caption, color: '#D8E2DA' },
 });

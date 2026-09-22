@@ -9,6 +9,7 @@ interface Props {
   emoji?: string;
   onPress: () => void;
   compact?: boolean;
+  disabled?: boolean;
 }
 
 const iconFor = (label: string): keyof typeof MaterialIcons.glyphMap => {
@@ -21,17 +22,25 @@ const iconFor = (label: string): keyof typeof MaterialIcons.glyphMap => {
   return 'restaurant';
 };
 
-export function SelectionChip({ label, selected, onPress, compact = false }: Props) {
+export function SelectionChip({
+  label,
+  selected,
+  onPress,
+  compact = false,
+  disabled = false,
+}: Props) {
   return (
     <Pressable
       accessibilityRole="radio"
       accessibilityLabel={label}
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.chip,
         compact && styles.compact,
         selected && styles.selected,
+        disabled && styles.disabled,
         pressed && styles.pressed,
       ]}
     >
@@ -64,6 +73,7 @@ const styles = StyleSheet.create({
   compact: { height: 52, paddingVertical: 7 },
   selected: { backgroundColor: colors.primary, borderColor: colors.accent },
   pressed: { opacity: 0.78 },
+  disabled: { opacity: 0.38 },
   icon: {
     width: 28,
     height: 28,

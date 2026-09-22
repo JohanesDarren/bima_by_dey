@@ -1,20 +1,12 @@
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Button } from '../components/Button';
 import { SelectionChip } from '../components/SelectionChip';
 import { MenuCard } from '../components/MenuCard';
-import { AGE_GROUPS, SPECIAL_CONDITIONS } from '../constants';
+import { AGE_GROUPS, isConditionAllowed, isUnder18, SPECIAL_CONDITIONS } from '../constants';
 import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
@@ -24,10 +16,9 @@ import type { RootStackParamList } from '../navigation/types';
 type Props = NativeStackScreenProps<RootStackParamList, 'Browse'>;
 
 const CATEGORY_FILTERS: { label: string; value: FoodCategory | null }[] = [
-  { label: 'Semua', value: null },
   { label: 'Makanan utama', value: 'main_course' },
-  { label: 'Berkuah', value: 'soup' },
-  { label: 'Kudapan', value: 'snack' },
+  { label: 'Sup', value: 'soup' },
+  { label: 'Hidangan penutup', value: 'dessert' },
   { label: 'Minuman', value: 'beverage' },
 ];
 
@@ -36,7 +27,6 @@ const SHORT_CONDITION_LABEL: Record<SpecialCondition, string> = {
   Bumil: 'Ibu hamil',
   Busui: 'Ibu menyusui',
   ABK: 'ABK',
-  'Non-ABK': 'Non-ABK',
 };
 
 export function BrowseScreen({ navigation }: Props) {
@@ -53,22 +43,36 @@ export function BrowseScreen({ navigation }: Props) {
 
   const [ageGroup, setAgeGroup] = useState<AgeGroup | null>(segment.ageGroup);
   const [condition, setCondition] = useState<SpecialCondition | null>(segment.condition);
-  const [query, setQuery] = useState('');
-  const [searchMode, setSearchMode] = useState(false);
   const segmentReady = ageGroup !== null && condition !== null;
+
+  const chooseAge = (nextAge: AgeGroup) => {
+    const nextCondition = condition && isConditionAllowed(nextAge, condition) ? condition : null;
+    setAgeGroup(nextAge);
+    setCondition(nextCondition);
+    setSegment({ ageGroup: nextAge, condition: nextCondition });
+  };
+
+  const chooseCondition = (nextCondition: SpecialCondition) => {
+    if (!isConditionAllowed(ageGroup, nextCondition)) return;
+    setCondition(nextCondition);
+    setSegment({ ageGroup, condition: nextCondition });
+  };
 
   const loadMenus = () => {
     if (!ageGroup || !condition) return;
     setSegment({ ageGroup, condition });
-    setSearchMode(false);
+    setCategory(null);
     loadRecommendedMenus({ ageGroup, condition });
   };
 
-  const search = (nextCategory = category) => {
+  const filterByCategory = (nextCategory: FoodCategory) => {
     if (!ageGroup || !condition) return;
-    const value = query.trim();
-    setSearchMode(true);
-    doSearch(value || 'rekomendasi sesuai preferensi', { ageGroup, condition }, nextCategory);
+    setCategory(nextCategory);
+    doSearch(
+      `rekomendasi ${CATEGORY_FILTERS.find((item) => item.value === nextCategory)?.label ?? 'menu'}`,
+      { ageGroup, condition },
+      nextCategory,
+    );
   };
 
   return (
@@ -97,46 +101,45 @@ export function BrowseScreen({ navigation }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.introRow}>
-          <View style={styles.grainMark}>
-            <MaterialIcons name="grain" size={28} color={colors.accent} />
-          </View>
-          <View style={styles.introCopy}>
-            <Text style={styles.title}>Hari ini masak untuk siapa?</Text>
-          </View>
-        </View>
+        <Text style={styles.title}>Masak untuk siapa?</Text>
+        <Text style={styles.subtitle}>Pilih umur dan kondisi untuk menyesuaikan menu.</Text>
 
         <Text style={styles.fieldLabel}>Kelompok umur</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.horizontalList}
-        >
+        <View style={styles.choiceGrid}>
           {AGE_GROUPS.map((item) => (
-            <View key={item.value} style={styles.ageChoice}>
+            <View key={item.value} style={styles.choiceCell}>
               <SelectionChip
                 label={item.label}
                 selected={ageGroup === item.value}
-                onPress={() => setAgeGroup(item.value)}
-                compact
-              />
-            </View>
-          ))}
-        </ScrollView>
-
-        <Text style={styles.fieldLabel}>Kondisi khusus</Text>
-        <View style={styles.conditionGrid}>
-          {SPECIAL_CONDITIONS.map((item) => (
-            <View key={item.value} style={styles.conditionChoice}>
-              <SelectionChip
-                label={SHORT_CONDITION_LABEL[item.value]}
-                selected={condition === item.value}
-                onPress={() => setCondition(item.value)}
+                onPress={() => chooseAge(item.value)}
                 compact
               />
             </View>
           ))}
         </View>
+
+        <Text style={styles.fieldLabel}>Kondisi khusus</Text>
+        <View style={styles.choiceGrid}>
+          {SPECIAL_CONDITIONS.map((item) => {
+            const disabled = !isConditionAllowed(ageGroup, item.value);
+            return (
+              <View key={item.value} style={styles.choiceCell}>
+                <SelectionChip
+                  label={SHORT_CONDITION_LABEL[item.value]}
+                  selected={condition === item.value}
+                  onPress={() => chooseCondition(item.value)}
+                  disabled={disabled}
+                  compact
+                />
+              </View>
+            );
+          })}
+        </View>
+        {isUnder18(ageGroup) ? (
+          <Text style={styles.conditionHint}>
+            Ibu hamil dan ibu menyusui hanya tersedia untuk kelompok usia dewasa.
+          </Text>
+        ) : null}
 
         <Button
           title="Tampilkan resep"
@@ -146,34 +149,8 @@ export function BrowseScreen({ navigation }: Props) {
         />
 
         <View style={styles.rule} />
-        <Text style={styles.sectionTitle}>Cari resep</Text>
-        <View style={styles.searchRow}>
-          <MaterialIcons name="search" size={20} color={colors.textMuted} />
-          <TextInput
-            accessibilityLabel="Cari resep"
-            style={styles.searchInput}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Cari bubur, kudapan, minuman…"
-            placeholderTextColor={colors.textSubtle}
-            returnKeyType="search"
-            onSubmitEditing={() => search()}
-          />
-          <Pressable
-            accessibilityLabel="Mulai pencarian"
-            disabled={!segmentReady}
-            onPress={() => search()}
-            style={styles.searchButton}
-          >
-            <MaterialIcons name="arrow-forward" size={19} color={colors.primaryDark} />
-          </Pressable>
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categories}
-        >
+        <Text style={styles.filterTitle}>Filter jenis menu</Text>
+        <View style={styles.filterGrid}>
           {CATEGORY_FILTERS.map((item) => {
             const selected = category === item.value;
             return (
@@ -181,10 +158,8 @@ export function BrowseScreen({ navigation }: Props) {
                 key={item.label}
                 accessibilityRole="radio"
                 accessibilityState={{ selected }}
-                onPress={() => {
-                  setCategory(item.value);
-                  if (searchMode) search(item.value);
-                }}
+                disabled={!segmentReady || item.value === null}
+                onPress={() => item.value && filterByCategory(item.value)}
                 style={({ pressed }) => [
                   styles.category,
                   selected && styles.categorySelected,
@@ -197,18 +172,25 @@ export function BrowseScreen({ navigation }: Props) {
               </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
 
         {menus.length > 0 || loadingMenus || menusError ? (
           <View style={styles.resultDivider} />
         ) : null}
 
+        {menus.length > 0 && segment.ageGroup && segment.condition ? (
+          <View style={styles.resultProfile}>
+            <MaterialIcons name="verified" size={17} color={colors.primary} />
+            <Text style={styles.resultProfileText}>
+              Hasil untuk {segment.ageGroup} · {SHORT_CONDITION_LABEL[segment.condition]}
+            </Text>
+          </View>
+        ) : null}
+
         {loadingMenus ? (
           <View style={styles.stateBox} accessibilityLiveRegion="polite">
             <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={styles.stateTitle}>
-              {searchMode ? 'Mencari resep' : 'Menyiapkan pilihan'}
-            </Text>
+            <Text style={styles.stateTitle}>Menyiapkan pilihan</Text>
             <Text style={styles.stateText}>Mengambil menu dari pengetahuan sorgum.</Text>
           </View>
         ) : menusError ? (
@@ -220,7 +202,7 @@ export function BrowseScreen({ navigation }: Props) {
             </View>
             <Pressable
               accessibilityRole="button"
-              onPress={searchMode ? () => search() : loadMenus}
+              onPress={category ? () => filterByCategory(category) : loadMenus}
               style={styles.retryButton}
             >
               <Text style={styles.retryText}>Coba lagi</Text>
@@ -279,69 +261,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  content: { paddingHorizontal: spacing.xl, paddingTop: spacing.xl, paddingBottom: 52 },
-  introRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
-  grainMark: {
-    width: 52,
-    height: 64,
-    borderRadius: 26,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    backgroundColor: colors.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  introCopy: { flex: 1 },
-  eyebrow: {
-    ...typography.label,
-    fontSize: 10,
-    color: colors.accentDark,
-    textTransform: 'uppercase',
-  },
-  title: { ...typography.h1, color: colors.text, marginTop: 4 },
+  content: { paddingHorizontal: spacing.xl, paddingTop: spacing.lg, paddingBottom: 52 },
+  title: { ...typography.h2, color: colors.text },
+  subtitle: { ...typography.bodySm, color: colors.textMuted, marginTop: 3 },
   fieldLabel: {
     ...typography.label,
     color: colors.textMuted,
     marginTop: spacing.xl,
     marginBottom: spacing.xs,
   },
-  horizontalList: { gap: spacing.sm, paddingRight: spacing.xl },
-  ageChoice: { width: 148 },
-  conditionGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 },
-  conditionChoice: { width: '50%', paddingHorizontal: 4 },
+  choiceGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 },
+  choiceCell: { width: '50%', paddingHorizontal: 4 },
+  conditionHint: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
   primaryAction: { marginTop: spacing.lg, backgroundColor: colors.primary },
   rule: { height: 1, backgroundColor: colors.border, marginVertical: spacing.xxl },
-  sectionTitle: { ...typography.h2, color: colors.text, marginTop: 4 },
+  filterTitle: { ...typography.h3, color: colors.text },
   resultDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.lg },
-  searchRow: {
-    minHeight: 54,
-    marginTop: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.surface,
-    paddingLeft: spacing.md,
-    paddingRight: 5,
+  resultProfile: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
   },
-  searchInput: {
-    flex: 1,
-    minHeight: 50,
-    paddingHorizontal: spacing.sm,
-    fontSize: 15,
-    color: colors.text,
+  resultProfileText: { ...typography.bodySm, color: colors.primary, fontWeight: '700' },
+  filterGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    paddingTop: spacing.md,
   },
-  searchButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  categories: { gap: spacing.sm, paddingVertical: spacing.md, paddingRight: spacing.xl },
   category: {
+    width: '48%',
+    flexGrow: 1,
     minHeight: 42,
     borderRadius: radius.sm,
     borderBottomWidth: 1,

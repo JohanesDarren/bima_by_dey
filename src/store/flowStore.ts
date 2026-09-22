@@ -22,6 +22,7 @@ interface FlowState {
 }
 
 const DEFAULT_SEGMENT: Segment = { ageGroup: null, condition: null };
+let menuRequestId = 0;
 
 /**
  * Store untuk alur discovery-first: menahan segmentasi terpilih, hasil menu
@@ -36,16 +37,22 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   activeRecipe: null,
   activeMenu: null,
 
-  setSegment: (segment) => set({ segment }),
+  setSegment: (segment) => {
+    menuRequestId += 1;
+    set({ segment, menus: [], loadingMenus: false, menusError: null });
+  },
 
   setCategory: (category) => set({ category }),
 
   loadRecommendedMenus: async (segment) => {
+    const requestId = ++menuRequestId;
     set({ loadingMenus: true, menusError: null });
     try {
-      const menus = await getRecommendedMenus(segment, 5);
+      const menus = await getRecommendedMenus(segment, 3);
+      if (requestId !== menuRequestId) return;
       set({ menus, loadingMenus: false, segment });
     } catch (e) {
+      if (requestId !== menuRequestId) return;
       set({
         loadingMenus: false,
         menusError: (e as Error).message,
@@ -54,11 +61,14 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   },
 
   doSearch: async (query, segment, category) => {
+    const requestId = ++menuRequestId;
     set({ loadingMenus: true, menusError: null });
     try {
       const menus = await searchRecipes({ query, segment, category });
+      if (requestId !== menuRequestId) return;
       set({ menus, loadingMenus: false, segment, category });
     } catch (e) {
+      if (requestId !== menuRequestId) return;
       set({ loadingMenus: false, menusError: (e as Error).message });
     }
   },
@@ -76,7 +86,8 @@ export const useFlowStore = create<FlowState>((set, get) => ({
 
   setActiveRecipe: (recipe, menu) => set({ activeRecipe: recipe, activeMenu: menu }),
 
-  reset: () =>
+  reset: () => {
+    menuRequestId += 1;
     set({
       segment: DEFAULT_SEGMENT,
       category: null,
@@ -85,5 +96,6 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       menusError: null,
       activeRecipe: null,
       activeMenu: null,
-    }),
+    });
+  },
 }));

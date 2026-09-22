@@ -1,9 +1,9 @@
 {
   "name": "bima_by_dey",
-  "version": "1.3.0",
+  "version": "1.5.0",
   "main": "index.ts",
   "dependencies": {
-    "@expo/metro-runtime": "^57.0.15",
+    "@expo/metro-runtime": "~57.0.16",
     "@expo/vector-icons": "^15.0.2",
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^7.3.18",
@@ -15,7 +15,7 @@
     "@tamagui/core": "^2.7.7",
     "@tamagui/lucide-icons": "^1.144.4",
     "babel-preset-expo": "^57.0.11",
-    "expo": "~57.0.23",
+    "expo": "~57.0.24",
     "expo-blur": "~57.0.3",
     "expo-font": "~57.0.4",
     "expo-linear-gradient": "~57.0.2",

@@ -1,7 +1,7 @@
 /** Domain types matching the Supabase schema in supabase/migrations/*.sql (snake_case). */
 
 export type AgeGroup = 'Balita' | 'Anak SD' | 'Remaja' | 'Dewasa' | 'Lansia';
-export type SpecialCondition = 'Bumil' | 'Busui' | 'ABK' | 'Non-ABK' | 'Umum';
+export type SpecialCondition = 'Bumil' | 'Busui' | 'ABK' | 'Umum';
 
 export interface Profile {
   id: string; // = auth.users.id

@@ -6,7 +6,7 @@ import { Button } from '../components/Button';
 import { Container } from '../components/Container';
 import { FormField } from '../components/FormField';
 import { SelectionChip } from '../components/SelectionChip';
-import { AGE_GROUPS, SPECIAL_CONDITIONS } from '../constants';
+import { AGE_GROUPS, isConditionAllowed, isUnder18, SPECIAL_CONDITIONS } from '../constants';
 import { useResponsive } from '../hooks/useResponsive';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
@@ -34,6 +34,11 @@ export function ProfileSetupScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const canSave = ageGroup !== null && condition !== null;
+
+  const chooseAge = (nextAge: AgeGroup) => {
+    setAgeGroup(nextAge);
+    if (condition && !isConditionAllowed(nextAge, condition)) setCondition(null);
+  };
 
   const onSave = async () => {
     if (!canSave) {
@@ -89,7 +94,7 @@ export function ProfileSetupScreen({ navigation }: Props) {
                       label={g.label}
                       emoji={g.emoji}
                       selected={ageGroup === g.value}
-                      onPress={() => setAgeGroup(g.value)}
+                      onPress={() => chooseAge(g.value)}
                     />
                   </View>
                 ))}
@@ -97,17 +102,26 @@ export function ProfileSetupScreen({ navigation }: Props) {
 
               <Text style={[styles.sectionLabel, styles.sectionSpacing]}>Kondisi Khusus</Text>
               <View style={[styles.chipGrid, isDesktop && styles.chipGridWide]}>
-                {SPECIAL_CONDITIONS.map((c) => (
-                  <View key={c.value} style={[styles.chipCell, isDesktop && styles.chipCellWide]}>
-                    <SelectionChip
-                      label={c.label}
-                      emoji={c.emoji}
-                      selected={condition === c.value}
-                      onPress={() => setCondition(c.value)}
-                    />
-                  </View>
-                ))}
+                {SPECIAL_CONDITIONS.map((c) => {
+                  const disabled = !isConditionAllowed(ageGroup, c.value);
+                  return (
+                    <View key={c.value} style={[styles.chipCell, isDesktop && styles.chipCellWide]}>
+                      <SelectionChip
+                        label={c.label}
+                        emoji={c.emoji}
+                        selected={condition === c.value}
+                        onPress={() => setCondition(c.value)}
+                        disabled={disabled}
+                      />
+                    </View>
+                  );
+                })}
               </View>
+              {isUnder18(ageGroup) ? (
+                <Text style={styles.hint}>
+                  Ibu hamil dan ibu menyusui hanya tersedia untuk usia dewasa.
+                </Text>
+              ) : null}
 
               {error ? <Text style={styles.error}>{error}</Text> : null}
               {!canSave && !error ? (

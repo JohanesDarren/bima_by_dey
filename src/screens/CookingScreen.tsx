@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import * as Speech from 'expo-speech';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Button } from '../components/Button';
 import { AICompanion } from '../components/AICompanion';
@@ -78,11 +77,6 @@ export function CookingScreen({ navigation, route }: Props) {
     }
   }
 
-  const speakNow = () => {
-    if (!step) return;
-    Speech.speak(`${step.title}. ${step.instruction}`, { language: 'id-ID' });
-  };
-
   const goNext = () => {
     if (isLast) {
       // Selesai semua step — simpan ke riwayat (guest: MMKV).
@@ -139,13 +133,6 @@ export function CookingScreen({ navigation, route }: Props) {
             Langkah {stepIdx + 1} dari {steps.length}
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.voiceCallHeaderBtn}
-          onPress={() => setVoiceCallVisible(true)}
-        >
-          <MaterialIcons name="phone-in-talk" size={16} color={colors.textOnPrimary} />
-          <Text style={styles.voiceCallHeaderBtnText}>Voice Call</Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView ref={scrollRef} style={styles.flex} contentContainerStyle={styles.content}>
@@ -215,10 +202,6 @@ export function CookingScreen({ navigation, route }: Props) {
 
             {/* Aksi */}
             <View style={styles.actionRow}>
-              <TouchableOpacity style={styles.voiceBtn} onPress={speakNow}>
-                <MaterialIcons name="volume-up" size={18} color={colors.text} />
-                <Text style={styles.voiceBtnText}>Bacakan</Text>
-              </TouchableOpacity>
               <Button
                 title={isLast ? 'Selesai' : 'Selesai — Lanjut'}
                 onPress={goNext}
@@ -237,6 +220,7 @@ export function CookingScreen({ navigation, route }: Props) {
           }
           recipeName={recipe.name}
           recipeMeta={`Langkah ${stepIdx + 1} dari ${steps.length}`}
+          simple
           onVoiceCall={() => setVoiceCallVisible(true)}
           placeholder={`Tanya soal langkah ${stepIdx + 1} / tanya bahan…`}
           onAssistantMessage={(t) => setNotes((n) => [...n, t])}
@@ -251,7 +235,11 @@ export function CookingScreen({ navigation, route }: Props) {
           onClose={() => setVoiceCallVisible(false)}
           segment={segment}
           recipeName={recipe.name}
-          stepLabel={`Langkah ${stepIdx + 1} dari ${steps.length}`}
+          stepLabel={
+            step
+              ? `Langkah ${stepIdx + 1}/${steps.length}: ${step.title}. ${step.instruction}`
+              : `Langkah ${stepIdx + 1} dari ${steps.length}`
+          }
         />
       ) : null}
     </SafeAreaView>
@@ -275,23 +263,6 @@ const styles = StyleSheet.create({
   headerMid: { flex: 1, paddingHorizontal: spacing.xs },
   headerTitle: { ...typography.body, color: colors.text, fontWeight: '800' },
   headerSub: { fontSize: 12, color: colors.textMuted },
-  voiceCallHeaderBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
-  },
-  voiceCallHeaderBtnText: { color: colors.textOnPrimary, fontSize: 12, fontWeight: '700' },
-  chatBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceAlt,
-  },
-  chatBtnActive: { backgroundColor: colors.primaryLight },
-  chatBtnText: { fontSize: 17 },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   stepCard: {
     backgroundColor: colors.surface,
@@ -333,15 +304,6 @@ const styles = StyleSheet.create({
   },
   resetBtnText: { color: colors.text, fontWeight: '600', fontSize: 13 },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
-  voiceBtn: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-  },
-  voiceBtnText: { color: colors.text, fontWeight: '700', fontSize: 13 },
   nextBtn: { flex: 1 },
 
   chatPanel: {

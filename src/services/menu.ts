@@ -1,5 +1,6 @@
 import { chatKroombox, extractJson, extractJsonArray } from './kroombox';
 import type { FoodCategory, MenuItem, Recipe, RecipeRequest, Segment } from '../types';
+import { isConditionAllowed } from '../constants';
 
 const CATEGORY_LABEL: Record<FoodCategory, string> = {
   main_course: 'main course (makanan utama)',
@@ -60,11 +61,21 @@ function segmentLabel(seg: Segment): string {
   return `Target Umur: [${age}], Kondisi Khusus: [${cond}]`;
 }
 
+function validateSegment(seg: Segment): void {
+  if (!seg.ageGroup || !seg.condition) {
+    throw new Error('Pilih kelompok umur dan kondisi khusus.');
+  }
+  if (!isConditionAllowed(seg.ageGroup, seg.condition)) {
+    throw new Error('Kondisi ibu hamil atau menyusui hanya tersedia untuk usia dewasa.');
+  }
+}
+
 function promptRecommendedMenus(seg: Segment, count = 5): string {
   return [
     `Anda adalah ahli gizi dan koki sorgum. Rekomendasikan ${count} menu andalan produk olahan sorgum yang TEPAT untuk:`,
     segmentLabel(seg),
-    'Setiap menu harus sesuai kebutuhan gizi dan kemampuan mengunyah segmen tersebut.',
+    'WAJIB pertimbangkan kelompok umur DAN kondisi khusus secara bersamaan. Jangan abaikan atau mengganti salah satunya.',
+    'Setiap menu harus sesuai kebutuhan gizi, keamanan bahan, tekstur, dan kemampuan mengunyah kombinasi tersebut.',
     '',
     'Jawab HANYA JSON array (tanpa teks lain, tanpa markdown fence):',
     '[{"name": string, "description": string singkat 1-2 kalimat, "nutrition": {calories, protein, fiber, key_vitamins, minerals, notes}, "strengths": [string], "weaknesses": [string], "category": "main_course|soup|dessert|snack|beverage|other"}]',
@@ -102,6 +113,7 @@ function promptSearchRecipe(query: string, seg: Segment, category: FoodCategory 
  * Ambil daftar menu andalan untuk satu segmentasi (RAG, non-streaming).
  */
 export async function getRecommendedMenus(seg: Segment, count = 5): Promise<MenuItem[]> {
+  validateSegment(seg);
   let lastError: unknown;
   // API flaky (bypass cuota kadang balas "Maaf, tidak ada teks…") → retry.
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -109,7 +121,7 @@ export async function getRecommendedMenus(seg: Segment, count = 5): Promise<Menu
       const raw = await chatKroombox({
         message: promptRecommendedMenus(seg, count),
         useRag: true,
-        stream: false,
+        stream: true,
       });
       if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
       const parsed = extractJsonArray<MenuItem>(raw);
@@ -126,42 +138,38 @@ export async function getRecommendedMenus(seg: Segment, count = 5): Promise<Menu
  * Ambil resep step-by-step untuk satu menu + segmentasi (RAG, non-streaming).
  */
 export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe> {
-  let raw = '';
+  validateSegment(seg);
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const r = await chatKroombox({
         message: promptRecipe(menuName, seg),
         useRag: true,
-        stream: false,
+        stream: true,
       });
-      if (r.trim() && !/tidak ada teks|maaf/i.test(r.slice(0, 120))) {
-        raw = r;
-        break;
-      }
+      if (!r.trim() || /tidak ada teks|maaf/i.test(r.slice(0, 120))) continue;
+      const parsed = extractJson<Recipe>(r);
+      if (parsed && Array.isArray(parsed.steps) && parsed.steps.length > 0) return parsed;
     } catch (error) {
       lastError = error;
     }
   }
-  const parsed = extractJson<Recipe>(raw);
-  if (!parsed || !Array.isArray(parsed.steps) || parsed.steps.length === 0) {
-    if (lastError instanceof Error) throw lastError;
-    throw new Error('Resep dari RAG tidak dapat dibaca. Coba lagi.');
-  }
-  return parsed;
+  if (lastError instanceof Error) throw lastError;
+  throw new Error('Resep dari RAG tidak dapat dibaca. Coba lagi.');
 }
 
 /**
  * Cari resep lain via AI sesuai kebutuhan + kategori (RAG, non-streaming).
  */
 export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
+  validateSegment(req.segment);
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const raw = await chatKroombox({
         message: promptSearchRecipe(req.query ?? '', req.segment, req.category),
         useRag: true,
-        stream: false,
+        stream: true,
       });
       if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
       const parsed = extractJsonArray<MenuItem>(raw);
