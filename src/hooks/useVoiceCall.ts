@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
-import { chatKroombox } from '../services/kroombox';
+import { streamKroomboxChat } from '../services/kroombox';
+import { cleanAssistantText } from '../utils/assistantText';
 import type { Segment } from '../types';
 import type {
   ExpoSpeechRecognitionErrorEvent,
@@ -9,27 +10,39 @@ import type {
 
 type SpeechModule = (typeof import('expo-speech-recognition'))['ExpoSpeechRecognitionModule'];
 type EventSubscription = { remove: () => void };
+type ActiveStream = { close: () => void };
 
 export type VoiceCallState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
 export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: string) {
   const [state, setState] = useState<VoiceCallState>('idle');
-  const [transcript, setTranscript] = useState('');
-  const [aiResponse, setAiResponse] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const listenersRef = useRef<EventSubscription[]>([]);
   const moduleRef = useRef<SpeechModule | null>(null);
+  const streamRef = useRef<ActiveStream | null>(null);
   const activeRef = useRef(false);
   const processingRef = useRef(false);
   const segmentRef = useRef(segment);
   const recipeRef = useRef({ recipeName, stepLabel });
   const listenRef = useRef<() => Promise<void>>(async () => undefined);
+  const voiceRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     segmentRef.current = segment;
     recipeRef.current = { recipeName, stepLabel };
   }, [segment, recipeName, stepLabel]);
+
+  useEffect(() => {
+    Speech.getAvailableVoicesAsync()
+      .then((voices) => {
+        const indonesian = voices.filter((voice) => /^id(?:-|_)/i.test(voice.language));
+        voiceRef.current =
+          indonesian.find((voice) => voice.quality === Speech.VoiceQuality.Enhanced)?.identifier ??
+          indonesian[0]?.identifier;
+      })
+      .catch(() => undefined);
+  }, []);
 
   const cleanupListeners = useCallback(() => {
     listenersRef.current.forEach((subscription) => subscription.remove());
@@ -51,6 +64,8 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   const stopCall = useCallback(async () => {
     activeRef.current = false;
     processingRef.current = false;
+    streamRef.current?.close();
+    streamRef.current = null;
     setState('idle');
     Speech.stop();
     try {
@@ -61,44 +76,70 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
     cleanupListeners();
   }, [cleanupListeners]);
 
-  const processUtterance = useCallback(async (text: string) => {
-    if (!activeRef.current) return;
-    processingRef.current = true;
-    setState('thinking');
-    setAiResponse('');
-
-    try {
-      const response = await chatKroombox({
-        message: `Konteks resep aktif: ${recipeRef.current.recipeName || 'belum dipilih'}, ${recipeRef.current.stepLabel || 'tanpa langkah aktif'}. Konteks pengguna: ${JSON.stringify(segmentRef.current)}. Pengguna berkata: "${text}". Jawablah HANYA berdasarkan pengetahuan RAG yang tersedia, singkat dan ramah untuk panggilan suara. Jika data RAG tidak mendukung jawaban, katakan secara jujur. Jangan gunakan list atau markdown. Maksimal 3 kalimat.`,
-        useRag: true,
-        stream: false,
-      });
-      if (!activeRef.current) return;
-
-      setAiResponse(response);
-      setState('speaking');
-      Speech.speak(response, {
-        language: 'id-ID',
-        rate: 1,
-        pitch: 1.05,
-        onDone: () => {
-          processingRef.current = false;
-          if (activeRef.current) listenRef.current().catch(() => undefined);
-        },
-        onError: () => {
-          processingRef.current = false;
-          if (activeRef.current) listenRef.current().catch(() => undefined);
-        },
-      });
-    } catch (error: unknown) {
-      console.warn('[useVoiceCall] AI request failed', error);
-      if (!activeRef.current) return;
-      processingRef.current = false;
-      setAiResponse('Maaf, koneksi ke pendamping resep sedang terganggu.');
-      setState('error');
-      setErrorMsg('Koneksi ke pendamping resep sedang terganggu. Coba lagi.');
-    }
+  const resumeListening = useCallback(() => {
+    processingRef.current = false;
+    if (activeRef.current) listenRef.current().catch(() => undefined);
   }, []);
+
+  const processUtterance = useCallback(
+    (text: string) => {
+      if (!activeRef.current) return;
+      processingRef.current = true;
+      setState('thinking');
+      setErrorMsg(null);
+      let response = '';
+
+      streamRef.current = streamKroomboxChat(
+        {
+          message: [
+            `Resep: ${recipeRef.current.recipeName || 'belum dipilih'}.`,
+            `Langkah aktif: ${recipeRef.current.stepLabel || 'tidak ada'}.`,
+            `Profil: ${segmentRef.current.ageGroup || 'umum'}, ${segmentRef.current.condition || 'umum'}.`,
+            `Pertanyaan: ${text}`,
+            'Jawab berdasarkan RAG. Langsung jawab inti pertanyaan dalam maksimal 2 kalimat pendek.',
+            'Tanpa pembuka, pengulangan pertanyaan, daftar, markdown, emoji, simbol dekoratif, atau penutup basa-basi.',
+            'Jika RAG tidak mendukung jawaban, katakan singkat dan jujur.',
+          ].join('\n'),
+          useRag: true,
+          stream: true,
+        },
+        {
+          onToken: (token) => {
+            response += token;
+          },
+          onDone: () => {
+            streamRef.current = null;
+            if (!activeRef.current) return;
+            const spoken = cleanAssistantText(response);
+            if (!spoken) {
+              processingRef.current = false;
+              setState('error');
+              setErrorMsg('Jawaban suara belum tersedia. Coba lagi.');
+              return;
+            }
+            setState('speaking');
+            Speech.speak(spoken, {
+              language: 'id-ID',
+              voice: voiceRef.current,
+              rate: 0.94,
+              pitch: 1,
+              onDone: resumeListening,
+              onError: resumeListening,
+            });
+          },
+          onError: (error) => {
+            console.warn('[useVoiceCall] AI stream failed', error);
+            streamRef.current = null;
+            if (!activeRef.current) return;
+            processingRef.current = false;
+            setState('error');
+            setErrorMsg('Koneksi ke pendamping resep terganggu. Coba lagi.');
+          },
+        },
+      );
+    },
+    [resumeListening],
+  );
 
   const startListening = useCallback(async () => {
     if (!activeRef.current) return;
@@ -114,8 +155,6 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
 
     try {
       const permission = await speechModule.requestPermissionsAsync();
-      // The user may close the modal while Android's permission dialog is open.
-      // Never attach listeners or restart capture for a closed call.
       if (!activeRef.current) {
         try {
           speechModule.abort();
@@ -131,7 +170,6 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
       }
 
       setErrorMsg(null);
-      setTranscript('');
       setState('listening');
 
       const resultSubscription = speechModule.addListener(
@@ -139,12 +177,10 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
         (event: ExpoSpeechRecognitionResultEvent) => {
           if (!activeRef.current) return;
           const text = event.results[0]?.transcript ?? '';
-          setTranscript(text);
           if (event.isFinal && text.trim()) {
-            // Set this before stop(): native `end` may fire immediately.
             processingRef.current = true;
             speechModule.stop();
-            processUtterance(text.trim()).catch(() => undefined);
+            processUtterance(text.trim());
           }
         },
       );
@@ -152,9 +188,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
         'error',
         (event: ExpoSpeechRecognitionErrorEvent) => {
           if (!activeRef.current || event.error === 'aborted') return;
-          if (event.error === 'speech-timeout' || event.error === 'no-speech') {
-            return;
-          }
+          if (event.error === 'speech-timeout' || event.error === 'no-speech') return;
           setErrorMsg(`Mikrofon terganggu: ${event.message || event.error}`);
           setState('error');
         },
@@ -168,7 +202,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
       });
 
       listenersRef.current = [resultSubscription, errorSubscription, endSubscription];
-      speechModule.start({ lang: 'id-ID', interimResults: true, continuous: false });
+      speechModule.start({ lang: 'id-ID', interimResults: false, continuous: false });
     } catch (error: unknown) {
       console.warn('[useVoiceCall] Could not start microphone', error);
       setErrorMsg(error instanceof Error ? error.message : 'Gagal memulai mikrofon.');
@@ -189,6 +223,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
     () => () => {
       activeRef.current = false;
       processingRef.current = false;
+      streamRef.current?.close();
       Speech.stop();
       cleanupListeners();
       try {
@@ -200,5 +235,5 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
     [cleanupListeners],
   );
 
-  return { state, transcript, aiResponse, errorMsg, startCall, stopCall };
+  return { state, errorMsg, startCall, stopCall };
 }

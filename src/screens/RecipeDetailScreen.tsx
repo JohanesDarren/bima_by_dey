@@ -11,9 +11,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
 import { Container } from '../components/Container';
-import { AICompanion } from '../components/AICompanion';
-import { VoiceCallModal } from '../components/VoiceCallModal';
-import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
@@ -26,13 +23,11 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
   const segment = useFlowStore((s) => s.segment);
   const activeRecipe = useFlowStore((s) => s.activeRecipe);
   const loadRecipe = useFlowStore((s) => s.loadRecipe);
-  const isGuest = useAuthStore((s) => s.isGuest);
 
   const [loading, setLoading] = useState(() =>
     Boolean(menu && (!activeRecipe || activeRecipe.name !== menu.name)),
   );
   const [error, setError] = useState<string | null>(null);
-  const [voiceCallVisible, setVoiceCallVisible] = useState(false);
   const recipe = activeRecipe;
 
   useEffect(() => {
@@ -133,26 +128,11 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
               ))}
             </View>
 
-            {/* AI menemani — diskusi resep SEBELUM mulai masak (teks + voice dua arah) */}
-            <Text style={styles.sectionTitle}>Diskusi Resep</Text>
-            <AICompanion
-              context={`Kita sedang membahas resep "${displayRecipe.name}" (${displayRecipe.servings} porsi, ±${displayRecipe.totalMinutes} menit). Bahan: ${displayRecipe.ingredients.join(', ')}. Langkah: ${displayRecipe.steps.map((s) => `${s.order}. ${s.title}`).join(' | ')}. Jawab pertanyaan user seputar resep ini dengan ramah.`}
-              recipeName={displayRecipe.name}
-              recipeMeta={`${displayRecipe.totalMinutes} mnt • ${displayRecipe.steps.length} langkah`}
-              onVoiceCall={() => setVoiceCallVisible(true)}
-              placeholder="Tanya soal resep / ganti bahan / porsi…"
-            />
-
             <Button
-              title="Mulai Masak — AI Menemanimu 👨‍🍳"
+              title="Lanjut ke Chef AI"
               onPress={() => navigation.navigate('Cooking', { recipe: displayRecipe })}
               style={styles.cta}
             />
-            {isGuest ? (
-              <Text style={styles.mutedCenter}>
-                Mode tamu: progres masak & diskusi disimpan di perangkat ini.
-              </Text>
-            ) : null}
           </Container>
         </ScrollView>
       ) : (
@@ -161,15 +141,6 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
           <Text style={styles.centerText}>Kembali dan coba lagi setelah layanan pulih.</Text>
         </View>
       )}
-      {voiceCallVisible && displayRecipe ? (
-        <VoiceCallModal
-          visible={voiceCallVisible}
-          onClose={() => setVoiceCallVisible(false)}
-          segment={segment}
-          recipeName={displayRecipe.name}
-          stepLabel={`${displayRecipe.totalMinutes} mnt • ${displayRecipe.steps.length} langkah`}
-        />
-      ) : null}
     </SafeAreaView>
   );
 }
@@ -234,10 +205,4 @@ const styles = StyleSheet.create({
   stepInstr: { ...typography.bodySm, color: colors.textMuted, marginTop: 2 },
   cta: { marginTop: spacing.xl },
   muted: { color: colors.textMuted },
-  mutedCenter: {
-    color: colors.textMuted,
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: spacing.md,
-  },
 });

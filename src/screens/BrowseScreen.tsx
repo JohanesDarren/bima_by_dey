@@ -38,8 +38,7 @@ export function BrowseScreen({ navigation }: Props) {
   const category = useFlowStore((s) => s.category);
   const setSegment = useFlowStore((s) => s.setSegment);
   const setCategory = useFlowStore((s) => s.setCategory);
-  const loadRecommendedMenus = useFlowStore((s) => s.loadRecommendedMenus);
-  const doSearch = useFlowStore((s) => s.doSearch);
+  const generateMenus = useFlowStore((s) => s.generateMenus);
 
   const [ageGroup, setAgeGroup] = useState<AgeGroup | null>(segment.ageGroup);
   const [condition, setCondition] = useState<SpecialCondition | null>(segment.condition);
@@ -58,21 +57,9 @@ export function BrowseScreen({ navigation }: Props) {
     setSegment({ ageGroup, condition: nextCondition });
   };
 
-  const loadMenus = () => {
-    if (!ageGroup || !condition) return;
-    setSegment({ ageGroup, condition });
-    setCategory(null);
-    loadRecommendedMenus({ ageGroup, condition });
-  };
-
-  const filterByCategory = (nextCategory: FoodCategory) => {
-    if (!ageGroup || !condition) return;
-    setCategory(nextCategory);
-    doSearch(
-      `rekomendasi ${CATEGORY_FILTERS.find((item) => item.value === nextCategory)?.label ?? 'menu'}`,
-      { ageGroup, condition },
-      nextCategory,
-    );
+  const generate = (append = false) => {
+    if (!ageGroup || !condition || !category) return;
+    generateMenus({ ageGroup, condition }, category, append);
   };
 
   return (
@@ -139,17 +126,12 @@ export function BrowseScreen({ navigation }: Props) {
           <Text style={styles.conditionHint}>
             Ibu hamil dan ibu menyusui hanya tersedia untuk kelompok usia dewasa.
           </Text>
+        ) : ageGroup === 'Lansia' ? (
+          <Text style={styles.conditionHint}>Ibu menyusui tidak tersedia untuk usia 60+.</Text>
         ) : null}
 
-        <Button
-          title="Tampilkan resep"
-          onPress={loadMenus}
-          disabled={!segmentReady}
-          style={styles.primaryAction}
-        />
-
         <View style={styles.rule} />
-        <Text style={styles.filterTitle}>Filter jenis menu</Text>
+        <Text style={styles.filterTitle}>Pilih jenis menu</Text>
         <View style={styles.filterGrid}>
           {CATEGORY_FILTERS.map((item) => {
             const selected = category === item.value;
@@ -157,9 +139,9 @@ export function BrowseScreen({ navigation }: Props) {
               <Pressable
                 key={item.label}
                 accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                disabled={!segmentReady || item.value === null}
-                onPress={() => item.value && filterByCategory(item.value)}
+                accessibilityState={{ selected, disabled: !segmentReady || loadingMenus }}
+                disabled={!segmentReady || loadingMenus || item.value === null}
+                onPress={() => item.value && setCategory(item.value)}
                 style={({ pressed }) => [
                   styles.category,
                   selected && styles.categorySelected,
@@ -174,6 +156,14 @@ export function BrowseScreen({ navigation }: Props) {
           })}
         </View>
 
+        <Button
+          title="Buat 3 menu"
+          onPress={() => generate(false)}
+          disabled={!segmentReady || !category || loadingMenus}
+          loading={loadingMenus && menus.length === 0}
+          style={styles.primaryAction}
+        />
+
         {menus.length > 0 || loadingMenus || menusError ? (
           <View style={styles.resultDivider} />
         ) : null}
@@ -187,11 +177,39 @@ export function BrowseScreen({ navigation }: Props) {
           </View>
         ) : null}
 
-        {loadingMenus ? (
+        {loadingMenus && menus.length === 0 ? (
           <View style={styles.stateBox} accessibilityLiveRegion="polite">
             <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={styles.stateTitle}>Menyiapkan pilihan</Text>
+            <Text style={styles.stateTitle}>Menyiapkan 3 menu</Text>
             <Text style={styles.stateText}>Mengambil menu dari pengetahuan sorgum.</Text>
+          </View>
+        ) : menus.length > 0 ? (
+          <View style={styles.menuList}>
+            {menusError ? (
+              <View style={styles.errorBox} accessibilityLiveRegion="polite">
+                <MaterialIcons name="cloud-off" size={24} color={colors.danger} />
+                <View style={styles.errorCopy}>
+                  <Text style={styles.errorTitle}>Menu baru belum bisa dimuat</Text>
+                  <Text style={styles.stateText}>{menusError}</Text>
+                </View>
+              </View>
+            ) : null}
+            {menus.map((menu, index) => (
+              <MenuCard
+                key={`${menu.name}-${index}`}
+                menu={menu}
+                featured={index === 0}
+                onPress={() => navigation.navigate('RecipeDetail', { menu })}
+              />
+            ))}
+            <Button
+              title="Buat 3 menu lainnya"
+              onPress={() => generate(true)}
+              loading={loadingMenus}
+              disabled={loadingMenus}
+              variant="ghost"
+              style={styles.moreButton}
+            />
           </View>
         ) : menusError ? (
           <View style={styles.errorBox} accessibilityLiveRegion="polite">
@@ -202,28 +220,17 @@ export function BrowseScreen({ navigation }: Props) {
             </View>
             <Pressable
               accessibilityRole="button"
-              onPress={category ? () => filterByCategory(category) : loadMenus}
+              onPress={() => generate(menus.length > 0)}
               style={styles.retryButton}
             >
               <Text style={styles.retryText}>Coba lagi</Text>
             </Pressable>
           </View>
-        ) : menus.length > 0 ? (
-          <View style={styles.menuList}>
-            {menus.map((menu, index) => (
-              <MenuCard
-                key={`${menu.name}-${index}`}
-                menu={menu}
-                featured={index === 0}
-                onPress={() => navigation.navigate('RecipeDetail', { menu })}
-              />
-            ))}
-          </View>
         ) : (
           <View style={styles.emptyBox}>
             <MaterialIcons name="menu-book" size={30} color={colors.accent} />
             <Text style={styles.stateTitle}>Belum ada menu</Text>
-            <Text style={styles.stateText}>Pilih kebutuhan, lalu tampilkan resep.</Text>
+            <Text style={styles.stateText}>Pilih umur, kondisi, dan jenis menu.</Text>
           </View>
         )}
 
@@ -307,6 +314,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
 
   menuList: { marginTop: spacing.sm },
+  moreButton: { marginTop: spacing.md },
   stateBox: {
     alignItems: 'center',
     paddingVertical: spacing.xxl,

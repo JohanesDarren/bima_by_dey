@@ -111,4 +111,5 @@ export interface RecipeRequest {
   query?: string;
   segment: Segment;
   category: FoodCategory | null;
+  excludedNames?: string[];
 }

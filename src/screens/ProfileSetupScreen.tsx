@@ -121,6 +121,8 @@ export function ProfileSetupScreen({ navigation }: Props) {
                 <Text style={styles.hint}>
                   Ibu hamil dan ibu menyusui hanya tersedia untuk usia dewasa.
                 </Text>
+              ) : ageGroup === 'Lansia' ? (
+                <Text style={styles.hint}>Ibu menyusui tidak tersedia untuk usia 60+.</Text>
               ) : null}
 
               {error ? <Text style={styles.error}>{error}</Text> : null}

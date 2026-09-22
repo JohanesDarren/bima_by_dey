@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { FoodCategory, MenuItem, Recipe, Segment } from '../types';
-import { getRecipe, getRecommendedMenus, searchRecipes } from '../services/menu';
+import { getRecipe, searchRecipes } from '../services/menu';
+import { menuKey } from '../utils/menuKey';
 
 interface FlowState {
   segment: Segment;
@@ -14,8 +15,7 @@ interface FlowState {
 
   setSegment: (segment: Segment) => void;
   setCategory: (category: FoodCategory | null) => void;
-  loadRecommendedMenus: (segment: Segment) => Promise<void>;
-  doSearch: (query: string, segment: Segment, category: FoodCategory | null) => Promise<void>;
+  generateMenus: (segment: Segment, category: FoodCategory, append?: boolean) => Promise<void>;
   loadRecipe: (menu: MenuItem, segment: Segment) => Promise<Recipe | null>;
   setActiveRecipe: (recipe: Recipe | null, menu: MenuItem | null) => void;
   reset: () => void;
@@ -42,31 +42,26 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     set({ segment, menus: [], loadingMenus: false, menusError: null });
   },
 
-  setCategory: (category) => set({ category }),
-
-  loadRecommendedMenus: async (segment) => {
-    const requestId = ++menuRequestId;
-    set({ loadingMenus: true, menusError: null });
-    try {
-      const menus = await getRecommendedMenus(segment, 3);
-      if (requestId !== menuRequestId) return;
-      set({ menus, loadingMenus: false, segment });
-    } catch (e) {
-      if (requestId !== menuRequestId) return;
-      set({
-        loadingMenus: false,
-        menusError: (e as Error).message,
-      });
-    }
+  setCategory: (category) => {
+    menuRequestId += 1;
+    set({ category, menus: [], loadingMenus: false, menusError: null });
   },
 
-  doSearch: async (query, segment, category) => {
+  generateMenus: async (segment, category, append = false) => {
     const requestId = ++menuRequestId;
+    const previous = append ? get().menus : [];
     set({ loadingMenus: true, menusError: null });
     try {
-      const menus = await searchRecipes({ query, segment, category });
+      const generated = await searchRecipes({
+        segment,
+        category,
+        excludedNames: previous.map((menu) => menu.name),
+      });
       if (requestId !== menuRequestId) return;
-      set({ menus, loadingMenus: false, segment, category });
+      const seen = new Set(previous.map((menu) => menuKey(menu.name)));
+      const unique = generated.filter((menu) => !seen.has(menuKey(menu.name))).slice(0, 3);
+      if (unique.length !== 3) throw new Error('RAG belum menghasilkan 3 menu baru. Coba lagi.');
+      set({ menus: [...previous, ...unique], loadingMenus: false, segment, category });
     } catch (e) {
       if (requestId !== menuRequestId) return;
       set({ loadingMenus: false, menusError: (e as Error).message });

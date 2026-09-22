@@ -23,7 +23,11 @@ export const isUnder18 = (ageGroup: AgeGroup | null): boolean =>
 export const isConditionAllowed = (
   ageGroup: AgeGroup | null,
   condition: SpecialCondition,
-): boolean => !isUnder18(ageGroup) || (condition !== 'Bumil' && condition !== 'Busui');
+): boolean => {
+  if (isUnder18(ageGroup) && (condition === 'Bumil' || condition === 'Busui')) return false;
+  if (ageGroup === 'Lansia' && condition === 'Busui') return false;
+  return true;
+};
 
 /** Stable order used by the kebab menu in Settings — never delete entries. */
 export const SUPPORTED_AGE_GROUP_VALUES: AgeGroup[] = AGE_GROUPS.map((a) => a.value);

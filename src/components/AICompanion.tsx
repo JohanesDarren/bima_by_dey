@@ -14,6 +14,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/kroombox';
+import { cleanAssistantText } from '../utils/assistantText';
 
 interface Props {
   context: string;
@@ -71,26 +72,43 @@ export function AICompanion({
         { role: 'assistant', content: '', reasoning_content: null },
       ]);
       setStreaming(true);
+      let assistantText = '';
 
       streamRef.current = streamKroomboxChat(
-        { message: `${context}\n\nPertanyaan user: ${text}`, useRag: true, stream: true },
         {
-          onToken: (delta) =>
+          message: [
+            context,
+            `Pertanyaan pengguna: ${text}`,
+            'Jawab lengkap tetapi langsung ke inti dan masuk akal berdasarkan RAG.',
+            'Gunakan paragraf biasa. Jangan gunakan emoji, logo, emblem, ikon, markdown, heading, atau simbol dekoratif.',
+            'Hindari pembuka, pengulangan pertanyaan, dan penutup basa-basi yang tidak perlu.',
+          ].join('\n\n'),
+          useRag: true,
+          stream: true,
+        },
+        {
+          onToken: (delta) => {
+            assistantText += delta;
+            const clean = cleanAssistantText(assistantText);
             setMessages((current) => {
               const next = [...current];
               const last = next[next.length - 1];
-              if (last?.role === 'assistant')
-                next[next.length - 1] = { ...last, content: last.content + delta };
+              if (last?.role === 'assistant') {
+                next[next.length - 1] = { ...last, content: clean };
+              }
               return next;
-            }),
+            });
+          },
           onDone: () => {
             setStreaming(false);
             streamRef.current = null;
             setMessages((current) => {
               const last = current[current.length - 1];
               if (last?.role === 'assistant' && last.content) {
-                if (autoSpeak) speak(last.content);
-                onAssistantMessage?.(last.content);
+                const clean = cleanAssistantText(last.content);
+                if (autoSpeak) speak(clean);
+                onAssistantMessage?.(clean);
+                return [...current.slice(0, -1), { ...last, content: clean }];
               }
               return current;
             });
