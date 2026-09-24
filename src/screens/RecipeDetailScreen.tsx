@@ -69,7 +69,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
       {loading ? (
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.centerText}>Menyusun resep langkah demi langkah…</Text>
+          <Text style={styles.centerText}>Menyiapkan resep…</Text>
         </View>
       ) : error ? (
         <View style={styles.centerBox}>
@@ -82,17 +82,10 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
         <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
           <Container>
             <Text style={styles.title}>{displayRecipe.name}</Text>
-            <View style={styles.metaRow}>
-              <View style={styles.metaChip}>
-                <Text style={styles.metaText}>🍽 {displayRecipe.servings} porsi</Text>
-              </View>
-              <View style={styles.metaChip}>
-                <Text style={styles.metaText}>⏱ ±{displayRecipe.totalMinutes} menit</Text>
-              </View>
-              <View style={styles.metaChip}>
-                <Text style={styles.metaText}>📋 {displayRecipe.steps.length} langkah</Text>
-              </View>
-            </View>
+            <Text style={styles.metaText}>
+              {displayRecipe.servings} porsi · ±{displayRecipe.totalMinutes} menit ·{' '}
+              {displayRecipe.steps.length} langkah
+            </Text>
 
             <Text style={styles.sectionTitle}>Bahan-bahan</Text>
             <View style={styles.card}>
@@ -101,7 +94,6 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
               ) : (
                 displayRecipe.ingredients.map((ing, i) => (
                   <Text key={i} style={styles.ingredient}>
-                    {'• '}
                     {ing}
                   </Text>
                 ))
@@ -119,7 +111,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
                     <Text style={styles.stepTitle}>
                       {s.title}
                       {s.durationMinutes ? (
-                        <Text style={styles.stepTimer}> · ⏱ {s.durationMinutes} menit</Text>
+                        <Text style={styles.stepTimer}> · {s.durationMinutes} menit</Text>
                       ) : null}
                     </Text>
                     <Text style={styles.stepInstr}>{s.instruction}</Text>
@@ -167,29 +159,22 @@ const styles = StyleSheet.create({
   centerText: { color: colors.textMuted, marginTop: spacing.md, textAlign: 'center' },
   errorText: { color: colors.danger, fontWeight: '700' },
   title: { ...typography.h2, color: colors.text },
-  metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, flexWrap: 'wrap' },
-  metaChip: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-  },
-  metaText: { fontSize: 13, color: colors.text, fontWeight: '600' },
+  metaText: { ...typography.bodySm, color: colors.textMuted, marginTop: spacing.xs },
   sectionTitle: {
     ...typography.h3,
     color: colors.text,
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
+    marginTop: spacing.lg,
+    marginBottom: spacing.xs,
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
+    borderRadius: radius.md,
+    padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  ingredient: { ...typography.body, color: colors.text, marginBottom: spacing.xs },
-  stepRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
+  ingredient: { ...typography.bodySm, color: colors.text, marginBottom: 4 },
+  stepRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   stepNum: {
     width: 28,
     height: 28,
@@ -203,6 +188,6 @@ const styles = StyleSheet.create({
   stepTitle: { ...typography.body, color: colors.text, fontWeight: '700' },
   stepTimer: { color: colors.primary, fontWeight: '600' },
   stepInstr: { ...typography.bodySm, color: colors.textMuted, marginTop: 2 },
-  cta: { marginTop: spacing.xl },
+  cta: { marginTop: spacing.lg },
   muted: { color: colors.textMuted },
 });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
 import { streamKroomboxChat } from '../services/kroombox';
-import { cleanAssistantText } from '../utils/assistantText';
+import { COMPACT_RAG_STANDARD, limitSentences } from '../utils/assistantText';
 import type { Segment } from '../types';
 import type {
   ExpoSpeechRecognitionErrorEvent,
@@ -88,6 +88,30 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
       setState('thinking');
       setErrorMsg(null);
       let response = '';
+      let settled = false;
+
+      const speakResponse = () => {
+        if (settled || !activeRef.current) return;
+        settled = true;
+        streamRef.current?.close();
+        streamRef.current = null;
+        const spoken = limitSentences(response, 2);
+        if (!spoken) {
+          processingRef.current = false;
+          setState('error');
+          setErrorMsg('Jawaban suara belum tersedia. Coba lagi.');
+          return;
+        }
+        setState('speaking');
+        Speech.speak(spoken, {
+          language: 'id-ID',
+          voice: voiceRef.current,
+          rate: 0.94,
+          pitch: 1,
+          onDone: resumeListening,
+          onError: resumeListening,
+        });
+      };
 
       streamRef.current = streamKroomboxChat(
         {
@@ -96,9 +120,9 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
             `Langkah aktif: ${recipeRef.current.stepLabel || 'tidak ada'}.`,
             `Profil: ${segmentRef.current.ageGroup || 'umum'}, ${segmentRef.current.condition || 'umum'}.`,
             `Pertanyaan: ${text}`,
-            'Jawab berdasarkan RAG. Langsung jawab inti pertanyaan dalam maksimal 2 kalimat pendek.',
+            COMPACT_RAG_STANDARD,
+            'Berikan jawaban terpenting pada kalimat pertama. Maksimal 2 kalimat pendek.',
             'Tanpa pembuka, pengulangan pertanyaan, daftar, markdown, emoji, simbol dekoratif, atau penutup basa-basi.',
-            'Jika RAG tidak mendukung jawaban, katakan singkat dan jujur.',
           ].join('\n'),
           useRag: true,
           stream: true,
@@ -106,28 +130,14 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
         {
           onToken: (token) => {
             response += token;
+            const completedSentences = response.match(/[.!?](?:\s|$)/g)?.length ?? 0;
+            if (completedSentences >= 2) speakResponse();
           },
           onDone: () => {
-            streamRef.current = null;
-            if (!activeRef.current) return;
-            const spoken = cleanAssistantText(response);
-            if (!spoken) {
-              processingRef.current = false;
-              setState('error');
-              setErrorMsg('Jawaban suara belum tersedia. Coba lagi.');
-              return;
-            }
-            setState('speaking');
-            Speech.speak(spoken, {
-              language: 'id-ID',
-              voice: voiceRef.current,
-              rate: 0.94,
-              pitch: 1,
-              onDone: resumeListening,
-              onError: resumeListening,
-            });
+            speakResponse();
           },
           onError: (error) => {
+            if (settled) return;
             console.warn('[useVoiceCall] AI stream failed', error);
             streamRef.current = null;
             if (!activeRef.current) return;

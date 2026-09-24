@@ -14,9 +14,17 @@ interface Props {
   stepLabel?: string;
 }
 
+const THINKING_STAGES = [
+  'Menghubungkan ke RAG…',
+  'Mencari pengetahuan yang relevan…',
+  'Memeriksa konteks langkah…',
+  'Merangkum jawaban singkat…',
+];
+
 export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabel }: Props) {
   const { state, errorMsg, startCall, stopCall } = useVoiceCall(segment, recipeName, stepLabel);
   const [muted, setMuted] = useState(false);
+  const [thinkingStage, setThinkingStage] = useState(0);
 
   useEffect(() => {
     if (!visible) return;
@@ -26,6 +34,18 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
       stopCall();
     };
   }, [visible, startCall, stopCall]);
+
+  useEffect(() => {
+    if (state !== 'thinking') {
+      setThinkingStage(0);
+      return;
+    }
+    const timer = setInterval(
+      () => setThinkingStage((current) => Math.min(current + 1, THINKING_STAGES.length - 1)),
+      1800,
+    );
+    return () => clearInterval(timer);
+  }, [state]);
 
   const close = () => {
     stopCall();
@@ -43,7 +63,7 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
     : state === 'listening'
       ? 'Silakan bicara'
       : state === 'thinking'
-        ? 'Menyiapkan jawaban'
+        ? THINKING_STAGES[thinkingStage]
         : state === 'speaking'
           ? 'Chef AI sedang menjawab'
           : state === 'error'
@@ -71,7 +91,26 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
             onPress={close}
             style={styles.close}
           >
-            <MaterialIcons name="close" size={23} color={colors.text} />
+            <MaterialIcons name="close" size={23} color={colors.textOnPrimary} />
+          </Pressable>
+        </View>
+
+        <View style={styles.modeToggle} accessibilityRole="tablist">
+          <View
+            accessibilityRole="tab"
+            accessibilityState={{ selected: true }}
+            style={[styles.modeButton, styles.modeButtonActive]}
+          >
+            <Text style={styles.modeTextActive}>Suara</Text>
+          </View>
+          <Pressable
+            accessibilityRole="tab"
+            accessibilityState={{ selected: false }}
+            accessibilityLabel="Beralih ke Chat"
+            onPress={close}
+            style={styles.modeButton}
+          >
+            <Text style={styles.modeText}>Chat</Text>
           </Pressable>
         </View>
 
@@ -142,19 +181,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.primaryDark,
+    backgroundColor: colors.primary,
   },
   headerCopy: { flex: 1, minWidth: 0 },
-  title: { ...typography.h3, color: colors.primary },
-  recipe: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+  title: { ...typography.h3, color: colors.textOnPrimary },
+  recipe: { ...typography.caption, color: colors.primaryLight, marginTop: 2 },
   close: {
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.primaryDark,
   },
+  modeToggle: {
+    alignSelf: 'center',
+    width: 190,
+    marginTop: spacing.md,
+    padding: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+    borderWidth: 1,
+    borderColor: colors.primaryDark,
+    flexDirection: 'row',
+  },
+  modeButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeButtonActive: { backgroundColor: colors.accent },
+  modeText: { ...typography.caption, color: colors.textOnPrimary, fontWeight: '700' },
+  modeTextActive: { ...typography.caption, color: colors.primaryDark, fontWeight: '800' },
   callArea: {
     flex: 1,
     alignItems: 'center',

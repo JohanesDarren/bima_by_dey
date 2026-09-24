@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { localStore } from '../lib/storage';
 import { streamKroomboxChat } from '../services/kroombox';
 import { buildSessionTitle, buildSystemPrompt } from '../utils/promptBuilder';
+import { COMPACT_RAG_STANDARD, limitSentences } from '../utils/assistantText';
 import type { ChatMessage, Profile } from '../types';
 
 type StreamStatus = 'idle' | 'streaming' | 'done' | 'error';
@@ -72,7 +73,7 @@ function welcomeMessage(): ChatMessage {
   return {
     role: 'assistant',
     content:
-      'Halo! 👋 Saya asisten **sorgumcore**. Ceritakan bahan yang kamu punya, misalnya "Saya punya ayam, selada, dan sorgum", nanti saya racikkan resep sehatnya!',
+      'Sebutkan bahan atau pertanyaan resep sorgummu. Saya akan menjawab singkat berdasarkan RAG.',
     reasoning_content: null,
   };
 }
@@ -105,7 +106,7 @@ async function runStream(
   // Injeksi demografi (PRD F-03) — API BIMA tidak punya field "system",
   // jadi parameter digabung ke pesan user.
   const systemHint = profile ? `${buildSystemPrompt(profile)}\n\n` : '';
-  const userPrompt = `${systemHint}${trimmed}`;
+  const userPrompt = `${systemHint}${COMPACT_RAG_STANDARD}\nJawab maksimal 5 kalimat. Berikan inti jawaban pada kalimat pertama.\n\nPertanyaan pengguna: ${trimmed}`;
   const history = messages
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .filter((m) => m.content.trim().length > 0)
@@ -124,19 +125,31 @@ async function runStream(
     set({ currentSessionId: sessionId });
   }
 
+  let assistantText = '';
   const stream = streamKroomboxChat(
     { message: userPrompt, history, stream: true, useRag: true },
     {
       onToken: (delta) => {
+        assistantText += delta;
         const { messages: cur } = get();
         const last = cur[cur.length - 1];
         if (last?.role === 'assistant') {
-          const updated = [...cur.slice(0, -1), { ...last, content: last.content + delta }];
+          const updated = [
+            ...cur.slice(0, -1),
+            { ...last, content: limitSentences(assistantText, 5) },
+          ];
           set({ messages: updated });
         }
       },
       onDone: async () => {
-        const cur = get().messages;
+        const current = get().messages;
+        const last = current[current.length - 1];
+        const clean = limitSentences(assistantText, 5);
+        const cur =
+          last?.role === 'assistant'
+            ? [...current.slice(0, -1), { ...last, content: clean }]
+            : current;
+        set({ messages: cur });
         if (!isGuest && userId && sessionId) {
           await persistMessages(userId, sessionId, cur);
         } else if (isGuest) {

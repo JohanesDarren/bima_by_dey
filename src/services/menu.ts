@@ -2,6 +2,7 @@ import { chatKroombox, extractJson, extractJsonArray } from './kroombox';
 import type { FoodCategory, MenuItem, Recipe, RecipeRequest, Segment } from '../types';
 import { isConditionAllowed } from '../constants';
 import { menuKey } from '../utils/menuKey';
+import { cleanAssistantText, COMPACT_RAG_STANDARD, limitSentences } from '../utils/assistantText';
 
 const CATEGORY_LABEL: Record<FoodCategory, string> = {
   main_course: 'main course (makanan utama)',
@@ -44,10 +45,14 @@ function normalizeCategory(raw: string | undefined | null): FoodCategory {
 function normalizeMenu(item: Partial<MenuItem>): MenuItem {
   return {
     name: item.name ?? '(tanpa nama)',
-    description: item.description ?? '',
+    description: limitSentences(item.description ?? '', 1),
     nutrition: item.nutrition && typeof item.nutrition === 'object' ? item.nutrition : {},
-    strengths: Array.isArray(item.strengths) ? item.strengths : [],
-    weaknesses: Array.isArray(item.weaknesses) ? item.weaknesses : [],
+    strengths: Array.isArray(item.strengths)
+      ? item.strengths.slice(0, 2).map((value) => limitSentences(String(value), 1))
+      : [],
+    weaknesses: Array.isArray(item.weaknesses)
+      ? item.weaknesses.slice(0, 2).map((value) => limitSentences(String(value), 1))
+      : [],
     category: normalizeCategory(item.category),
   };
 }
@@ -73,16 +78,19 @@ function validateSegment(seg: Segment): void {
 
 function promptRecipe(menuName: string, seg: Segment): string {
   return [
-    `Buatkan resep lengkap dan detail untuk "${menuName}" yang sesuai:`,
+    `Buat resep ringkas tetapi lengkap untuk "${menuName}" yang sesuai:`,
     segmentLabel(seg),
+    COMPACT_RAG_STANDARD,
     '',
     'Jawab HANYA JSON (tanpa teks lain, tanpa markdown fence):',
-    '{"name": string, "servings": number, "ingredients": [string], "steps": [{"order": number, "title": string, "instruction": string detail, "durationMinutes": number|null}], "totalMinutes": number}',
+    '{"name": string, "servings": number, "ingredients": [string], "steps": [{"order": number, "title": string, "instruction": string, "durationMinutes": number|null}], "totalMinutes": number}',
     '',
     'Aturan:',
-    '- Pecah resep menjadi langkah detail (5-10 langkah) yang bisa diikuti selangkah demi selangkah.',
+    '- Gunakan 4-7 langkah penting. Gabungkan tindakan kecil yang berurutan, tetapi jangan hilangkan tindakan keselamatan atau proses wajib.',
+    '- Setiap bahan satu baris, dengan takaran. Setiap instruksi maksimal 2 kalimat pendek dan langsung berupa tindakan.',
     '- durationMinutes: isi angka menit bila langkah butuh waktu (misal merebus 10 menit, mengungkep 30 menit); null bila instan.',
     '- Sesuaikan porsi, tekstur, dan bumbu dengan segmentasi.',
+    '- Jangan menambahkan fakta yang tidak didukung RAG. Jika resep tidak cukup didukung, jangan membuat resep palsu.',
   ].join('\n');
 }
 
@@ -91,11 +99,13 @@ function promptSearchRecipe(seg: Segment, category: FoodCategory, excludedNames:
     'Buat TEPAT 3 rekomendasi menu olahan sorgum.',
     segmentLabel(seg),
     `Kategori WAJIB: ${CATEGORY_LABEL[category]}. Semua menu harus termasuk kategori ini.`,
+    COMPACT_RAG_STANDARD,
     'WAJIB pertimbangkan kelompok umur DAN kondisi khusus secara bersamaan.',
     excludedNames.length
       ? `JANGAN ulangi menu berikut: ${excludedNames.map((name) => `"${name}"`).join(', ')}.`
       : '',
     'Ketiga nama menu harus berbeda satu sama lain.',
+    'Deskripsi tepat 1 kalimat pendek. Maksimal 2 kelebihan dan 2 perhatian, masing-masing 1 kalimat pendek.',
     '',
     'Jawab HANYA JSON array (tanpa teks lain, tanpa markdown fence):',
     '[{"name": string, "description": string, "nutrition": {calories, protein, fiber, key_vitamins, minerals, notes}, "strengths": [string], "weaknesses": [string], "category": "main_course|soup|dessert|snack|beverage|other"}]',
@@ -117,7 +127,35 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
       });
       if (!r.trim() || /tidak ada teks|maaf/i.test(r.slice(0, 120))) continue;
       const parsed = extractJson<Recipe>(r);
-      if (parsed && Array.isArray(parsed.steps) && parsed.steps.length > 0) return parsed;
+      if (
+        parsed &&
+        typeof parsed.name === 'string' &&
+        Number.isFinite(parsed.servings) &&
+        Number.isFinite(parsed.totalMinutes) &&
+        Array.isArray(parsed.ingredients) &&
+        parsed.ingredients.length > 0 &&
+        Array.isArray(parsed.steps) &&
+        parsed.steps.length >= 4 &&
+        parsed.steps.length <= 7 &&
+        parsed.steps.every(
+          (step) =>
+            Number.isFinite(step.order) &&
+            Boolean(cleanAssistantText(step.title)) &&
+            Boolean(cleanAssistantText(step.instruction)),
+        )
+      ) {
+        return {
+          ...parsed,
+          name: cleanAssistantText(parsed.name),
+          ingredients: parsed.ingredients.map((value) => cleanAssistantText(String(value))),
+          steps: parsed.steps.map((step, index) => ({
+            ...step,
+            order: index + 1,
+            title: limitSentences(step.title, 1),
+            instruction: limitSentences(step.instruction, 2),
+          })),
+        };
+      }
     } catch (error) {
       lastError = error;
     }

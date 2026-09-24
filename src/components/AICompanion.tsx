@@ -14,7 +14,14 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/kroombox';
-import { cleanAssistantText } from '../utils/assistantText';
+import { COMPACT_RAG_STANDARD, limitSentences } from '../utils/assistantText';
+import type {
+  ExpoSpeechRecognitionErrorEvent,
+  ExpoSpeechRecognitionResultEvent,
+} from 'expo-speech-recognition';
+
+type SpeechModule = (typeof import('expo-speech-recognition'))['ExpoSpeechRecognitionModule'];
+type EventSubscription = { remove: () => void };
 
 interface Props {
   context: string;
@@ -28,6 +35,12 @@ interface Props {
 }
 
 const SUGGESTIONS = ['Pengganti bahan?', 'Ubah jumlah porsi?', 'Jelaskan langkah ini'];
+const LOADING_STAGES = [
+  'Menghubungkan ke pengetahuan sorgum…',
+  'Mencari konteks yang relevan…',
+  'Memeriksa kecocokan dengan resep…',
+  'Merangkum jawaban terbaik…',
+];
 
 export function AICompanion({
   context,
@@ -44,15 +57,44 @@ export function AICompanion({
   const [streaming, setStreaming] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(!simple);
   const [lastQuestion, setLastQuestion] = useState('');
+  const [recording, setRecording] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [loadingStage, setLoadingStage] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const streamRef = useRef<{ close: () => void } | null>(null);
+  const speechModuleRef = useRef<SpeechModule | null>(null);
+  const speechListenersRef = useRef<EventSubscription[]>([]);
+
+  const cleanupVoiceMessage = useCallback(() => {
+    speechListenersRef.current.forEach((listener) => listener.remove());
+    speechListenersRef.current = [];
+    setRecording(false);
+  }, []);
+
+  useEffect(() => {
+    if (!streaming) {
+      setLoadingStage(0);
+      return;
+    }
+    const timer = setInterval(
+      () => setLoadingStage((current) => Math.min(current + 1, LOADING_STAGES.length - 1)),
+      2200,
+    );
+    return () => clearInterval(timer);
+  }, [streaming]);
 
   useEffect(
     () => () => {
       streamRef.current?.close();
       Speech.stop();
+      cleanupVoiceMessage();
+      try {
+        speechModuleRef.current?.abort();
+      } catch {
+        // Recognizer may already be stopped.
+      }
     },
-    [],
+    [cleanupVoiceMessage],
   );
 
   const speak = useCallback((text: string) => {
@@ -79,7 +121,8 @@ export function AICompanion({
           message: [
             context,
             `Pertanyaan pengguna: ${text}`,
-            'Jawab lengkap tetapi langsung ke inti dan masuk akal berdasarkan RAG.',
+            COMPACT_RAG_STANDARD,
+            'Berikan jawaban inti pada kalimat pertama. Maksimal 5 kalimat ringkas, lengkap, dan relevan.',
             'Gunakan paragraf biasa. Jangan gunakan emoji, logo, emblem, ikon, markdown, heading, atau simbol dekoratif.',
             'Hindari pembuka, pengulangan pertanyaan, dan penutup basa-basi yang tidak perlu.',
           ].join('\n\n'),
@@ -89,7 +132,7 @@ export function AICompanion({
         {
           onToken: (delta) => {
             assistantText += delta;
-            const clean = cleanAssistantText(assistantText);
+            const clean = limitSentences(assistantText, 5);
             setMessages((current) => {
               const next = [...current];
               const last = next[next.length - 1];
@@ -105,7 +148,7 @@ export function AICompanion({
             setMessages((current) => {
               const last = current[current.length - 1];
               if (last?.role === 'assistant' && last.content) {
-                const clean = cleanAssistantText(last.content);
+                const clean = limitSentences(assistantText, 5);
                 if (autoSpeak) speak(clean);
                 onAssistantMessage?.(clean);
                 return [...current.slice(0, -1), { ...last, content: clean }];
@@ -142,6 +185,66 @@ export function AICompanion({
     setStreaming(false);
   };
 
+  const toggleVoiceMessage = useCallback(async () => {
+    if (streaming) return;
+    if (recording) {
+      speechModuleRef.current?.stop();
+      cleanupVoiceMessage();
+      return;
+    }
+
+    setVoiceError(null);
+    try {
+      const imported = await import('expo-speech-recognition');
+      const speechModule = imported.ExpoSpeechRecognitionModule;
+      speechModuleRef.current = speechModule;
+      const permission = await speechModule.requestPermissionsAsync();
+      if (!permission.granted) {
+        setVoiceError('Izin mikrofon diperlukan.');
+        return;
+      }
+
+      cleanupVoiceMessage();
+      const resultListener = speechModule.addListener(
+        'result',
+        (event: ExpoSpeechRecognitionResultEvent) => {
+          const transcript = event.results[0]?.transcript?.trim() ?? '';
+          if (transcript) setInput(transcript);
+          if (event.isFinal && transcript) {
+            cleanupVoiceMessage();
+            try {
+              speechModule.stop();
+            } catch {
+              // Final recognition may stop itself.
+            }
+            send(transcript);
+          }
+        },
+      );
+      const errorListener = speechModule.addListener(
+        'error',
+        (event: ExpoSpeechRecognitionErrorEvent) => {
+          cleanupVoiceMessage();
+          if (event.error !== 'aborted') {
+            setVoiceError(
+              event.error === 'no-speech' || event.error === 'speech-timeout'
+                ? 'Suara belum terdengar. Coba lagi.'
+                : 'Pesan suara gagal direkam.',
+            );
+          }
+        },
+      );
+      const endListener = speechModule.addListener('end', cleanupVoiceMessage);
+      speechListenersRef.current = [resultListener, errorListener, endListener];
+      setRecording(true);
+      speechModule.start({ lang: 'id-ID', interimResults: true, continuous: false });
+    } catch (error: unknown) {
+      console.warn('[AICompanion] Voice message unavailable', error);
+      cleanupVoiceMessage();
+      setVoiceError('Pesan suara tidak tersedia di perangkat ini.');
+    }
+  }, [cleanupVoiceMessage, recording, send, streaming]);
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.panel, compact && styles.panelCompact, elevation.sm]}>
@@ -174,16 +277,14 @@ export function AICompanion({
             disabled={!onVoiceCall}
             style={styles.modeButton}
           >
-            <MaterialIcons name="phone-in-talk" size={16} color={colors.textMuted} />
-            <Text style={styles.modeText}>Panggilan Suara</Text>
+            <Text style={styles.modeText}>Suara</Text>
           </Pressable>
           <View
             accessibilityRole="tab"
             accessibilityState={{ selected: true }}
             style={[styles.modeButton, styles.modeButtonActive]}
           >
-            <MaterialIcons name="chat-bubble-outline" size={16} color={colors.accent} />
-            <Text style={styles.modeTextActive}>Chat Teks</Text>
+            <Text style={styles.modeTextActive}>Chat</Text>
           </View>
         </View>
 
@@ -266,7 +367,7 @@ export function AICompanion({
           )}
           {streaming ? (
             <Text style={styles.streamLabel} accessibilityLiveRegion="polite">
-              Sedang menyiapkan jawaban…
+              {LOADING_STAGES[loadingStage]}
             </Text>
           ) : null}
         </ScrollView>
@@ -305,11 +406,31 @@ export function AICompanion({
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder={placeholder || 'Tulis pertanyaan…'}
+            placeholder={recording ? 'Sedang mendengarkan…' : placeholder || 'Tulis pertanyaan…'}
             placeholderTextColor={colors.textSubtle}
             onSubmitEditing={() => send()}
+            editable={!recording}
             multiline
           />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={recording ? 'Hentikan pesan suara' : 'Kirim pesan suara'}
+            accessibilityState={{ selected: recording, disabled: streaming }}
+            onPress={toggleVoiceMessage}
+            disabled={streaming}
+            style={({ pressed }) => [
+              styles.voiceButton,
+              recording && styles.voiceButtonRecording,
+              streaming && styles.sendDisabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <MaterialIcons
+              name={recording ? 'stop' : 'mic'}
+              size={20}
+              color={recording ? colors.white : colors.primary}
+            />
+          </Pressable>
           <Pressable
             accessibilityLabel={streaming ? 'Hentikan jawaban' : 'Kirim pesan'}
             onPress={streaming ? stop : () => send()}
@@ -327,6 +448,11 @@ export function AICompanion({
             )}
           </Pressable>
         </View>
+        {voiceError ? (
+          <Text style={styles.voiceError} accessibilityLiveRegion="polite">
+            {voiceError}
+          </Text>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -378,9 +504,9 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     padding: 4,
     borderRadius: radius.lg,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.primary,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primaryDark,
     flexDirection: 'row',
   },
   modeButton: {
@@ -392,9 +518,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
   },
-  modeButtonActive: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.accent },
-  modeText: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
-  modeTextActive: { ...typography.caption, color: colors.primary, fontWeight: '800' },
+  modeButtonActive: { backgroundColor: colors.accent },
+  modeText: { ...typography.caption, color: colors.textOnPrimary, fontWeight: '700' },
+  modeTextActive: { ...typography.caption, color: colors.primaryDark, fontWeight: '800' },
   dateRow: { alignItems: 'center', paddingTop: spacing.md },
   dateText: {
     ...typography.label,
@@ -495,6 +621,24 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     fontSize: 14,
     color: colors.text,
+  },
+  voiceButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceButtonRecording: { backgroundColor: colors.danger, borderColor: colors.danger },
+  voiceError: {
+    ...typography.caption,
+    color: colors.danger,
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
   },
   sendButton: {
     width: 44,
