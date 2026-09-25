@@ -51,3 +51,6 @@ yarn-error.*
 
 # local Hermes working files
 /.hermes/
+
+# working folder alat lain (bukan bagian aplikasi)
+/.omo/

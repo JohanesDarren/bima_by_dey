@@ -12,8 +12,19 @@ function loadGuestHistory(): ChatMessage[] {
   const raw = localStore.getGuestHistory();
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw) as ChatMessage[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(raw) as unknown;
+    // Riwayat tamu bisa rusak (versi lama / tulisan tangan) — saring dulu supaya
+    // pesan cacat tidak jadi balon kosong di layar.
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (value): value is ChatMessage =>
+            Boolean(value) &&
+            typeof value === 'object' &&
+            ((value as ChatMessage).role === 'user' ||
+              (value as ChatMessage).role === 'assistant') &&
+            typeof (value as ChatMessage).content === 'string',
+        )
+      : [];
   } catch {
     return [];
   }
@@ -111,18 +122,26 @@ async function runStream(
     .filter((m) => m.content.trim().length > 0)
     .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-  // Buat session (khusus auth; guest murni lokal).
-  let sessionId = get().currentSessionId;
-  if (!sessionId && !isGuest && userId) {
-    const title = buildSessionTitle(trimmed);
-    const { data } = await supabase
-      .from('chat_sessions')
-      .insert({ user_id: userId, title })
-      .select('id')
-      .single();
-    sessionId = data?.id ?? null;
-    set({ currentSessionId: sessionId });
-  }
+  // Penyimpanan tidak boleh menunda jawaban RAG: pembuatan sesi berjalan BERBARENGAN
+  // dengan permintaan ke server, bukan di depannya. Dulu `await` di sini menahan
+  // jawaban sampai Supabase selesai (dan kalau lambat/gagal, jawaban ikut tertunda).
+  const currentSessionId = get().currentSessionId;
+  const sessionPromise: Promise<string | null> =
+    currentSessionId || isGuest || !userId
+      ? Promise.resolve(currentSessionId)
+      : Promise.resolve(
+          supabase
+            .from('chat_sessions')
+            .insert({ user_id: userId, title: buildSessionTitle(trimmed) })
+            .select('id')
+            .single(),
+        )
+          .then(({ data }) => {
+            const id = data?.id ?? null;
+            if (id) set({ currentSessionId: id });
+            return id;
+          })
+          .catch(() => null);
 
   const stream = streamKroomboxChat(
     { message: userPrompt, history, stream: true, useRag: true },
@@ -137,8 +156,11 @@ async function runStream(
       },
       onDone: async () => {
         const cur = get().messages;
-        if (!isGuest && userId && sessionId) {
-          await persistMessages(userId, sessionId, cur);
+        if (!isGuest && userId) {
+          // Penyimpanan dijalankan di belakang: pengguna sudah melihat jawabannya.
+          sessionPromise
+            .then((sessionId) => (sessionId ? persistMessages(userId, sessionId, cur) : undefined))
+            .catch(() => undefined);
         } else if (isGuest) {
           saveGuestHistory(cur);
         }

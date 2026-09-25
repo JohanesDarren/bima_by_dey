@@ -1,9 +1,9 @@
 import React, { useCallback, useState } from 'react';
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { listCookHistory } from '../services/history';
+import { clearCookHistory, listCookHistory } from '../services/history';
 import type { HistorySession } from '../services/history';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
@@ -21,6 +21,29 @@ export function HistoryScreen({ navigation }: Props) {
       setSessions(listCookHistory());
     }, []),
   );
+
+  /**
+   * Hapus seluruh riwayat masak. `clearCookHistory()` sudah ada sejak awal tetapi tidak
+   * pernah dipanggil layar mana pun — akibatnya riwayat menumpuk dan tak bisa
+   * dibersihkan pengguna. Konfirmasi dulu supaya tidak terhapus karena salah tekan.
+   */
+  const clearAll = () => {
+    Alert.alert(
+      'Hapus semua riwayat?',
+      'Semua sesi masak yang tersimpan di HP ini akan dihapus permanen.',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus',
+          style: 'destructive',
+          onPress: () => {
+            clearCookHistory();
+            setSessions([]);
+          },
+        },
+      ],
+    );
+  };
 
   const openSession = (s: HistorySession) => {
     // Buka ulang resep tanpa RAG (pakai snapshot).
@@ -42,7 +65,18 @@ export function HistoryScreen({ navigation }: Props) {
           <Text style={styles.backBtnText}>← Kembali</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Riwayat Masak</Text>
-        <View style={{ width: 70 }} />
+        {sessions.length > 0 ? (
+          <TouchableOpacity
+            onPress={clearAll}
+            style={styles.clearBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Hapus semua riwayat"
+          >
+            <Text style={styles.clearBtnText}>Hapus</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.clearBtn} />
+        )}
       </View>
 
       <FlatList
@@ -100,6 +134,8 @@ const styles = StyleSheet.create({
   },
   backBtn: { paddingVertical: spacing.sm, paddingRight: spacing.md, minWidth: 70 },
   backBtnText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
+  clearBtn: { minWidth: 70, alignItems: 'flex-end', paddingVertical: spacing.sm },
+  clearBtnText: { color: colors.danger, fontWeight: '700', fontSize: 14 },
   headerTitle: { ...typography.h3, color: colors.text },
   list: { padding: spacing.lg, flexGrow: 1 },
   card: {

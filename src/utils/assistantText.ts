@@ -96,6 +96,24 @@ function limitWords(value: string, maxWords: number): string {
 export const CHAT_MAX_WORDS = 30;
 export const VOICE_MAX_WORDS = 25;
 
+/**
+ * Teks tahapan saat menunggu jawaban. Server sering diam lama (cari konteks RAG lalu
+ * menyusun jawaban) — satu kalimat statis membuat aplikasi terasa menggantung, padahal
+ * prosesnya jalan. Ini MURNI keterangan untuk pengguna: tidak mengubah permintaan ke
+ * server, dan tidak menambah waktu tunggu.
+ */
+export const CHAT_LOADING_STAGES = [
+  'Menghubungkan ke pengetahuan sorgum…',
+  'Mencari menu dan panduan yang cocok…',
+  'Menyusun jawaban dari sumber BIMA…',
+  'Merapikan jawaban…',
+];
+export const VOICE_LOADING_STAGES = [
+  'Menghubungkan ke RAG…',
+  'Mencari panduan yang cocok…',
+  'Menyiapkan jawaban…',
+];
+
 export function cleanAssistantText(value: string, options?: { maxWords?: number }): string {
   const cleaned = cutVerificationBlock(value)
     .replace(/```[\s\S]*?```/g, (block) => block.replace(/```\w*|```/g, ''))
@@ -125,6 +143,43 @@ export function cleanAssistantText(value: string, options?: { maxWords?: number 
   return value
     .replace(/```[\s\S]*?```/g, (block) => block.replace(/```\w*|```/g, ''))
     .replace(/[*_`>#~|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Ambil maksimal N kalimat pertama, buang kalimat kembar.
+ *
+ * Dipakai penorma resep (`services/recipeNormalizer.ts`) untuk memangkas judul langkah
+ * jadi 1 kalimat dan instruksi jadi 2 kalimat. Titik di dalam angka desimal ("1.5 liter")
+ * dan singkatan lazim ("dr.", "dll.", "dst.") dilindungi lebih dulu supaya tidak
+ * dianggap batas kalimat — sebelum dilindungi, "Gunakan 1.5 liter air." terpotong jadi
+ * "Gunakan 1." dan artinya rusak.
+ *
+ * Diambil dari versi upstream (main) apa adanya; sudah ada selftest-nya.
+ */
+export function limitSentences(value: string, maximum: number): string {
+  const clean = cleanAssistantText(value);
+  if (!clean || maximum < 1) return '';
+  const protectedText = clean
+    .replace(/(\d)\.(\d)/g, '$1\uE000$2')
+    .replace(/\b(?:dr|no|dll|dst|dsb|s\.d)\./gi, (found) => found.replace(/\./g, '\uE000'));
+  const sentences = protectedText.match(/[^.!?]+(?:[.!?]+|$)/g) ?? [protectedText];
+  const seen = new Set<string>();
+  return sentences
+    .filter((sentence) => {
+      const key = sentence
+        .toLowerCase()
+        .replace(/\uE000/g, '.')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maximum)
+    .join(' ')
+    .replace(/\uE000/g, '.')
     .replace(/\s+/g, ' ')
     .trim();
 }

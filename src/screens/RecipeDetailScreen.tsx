@@ -54,16 +54,22 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
   const storeRecipeIsThisMenu = Boolean(menu && activeMenu && sameMenu(activeMenu.name, menu.name));
   const [loading, setLoading] = useState(() => Boolean(menu && !storeRecipeIsThisMenu));
   const [error, setError] = useState<string | null>(null);
+  /** Dinaikkan saat pengguna menekan "Coba lagi" → memicu pengambilan ulang. */
+  const [retryKey, setRetryKey] = useState(0);
   const recipe = activeRecipe;
 
   useEffect(() => {
     // Dari Browse: menu diberikan → ambil resep (bila store belum punya resep menu ini).
     if (!menu) return;
-    if (!storeRecipeIsThisMenu) {
+    // Penjaga: hasil permintaan yang sudah tidak relevan (pengguna pindah menu atau
+    // menekan "Coba lagi") tidak boleh lagi menimpa layar.
+    let cancelled = false;
+    if (!storeRecipeIsThisMenu || retryKey > 0) {
       setLoading(true);
       setError(null);
       loadRecipe(menu, segment)
         .then((loaded) => {
+          if (cancelled) return;
           if (loaded) {
             setLoadedRecipe(loaded);
             return;
@@ -73,10 +79,15 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
               'Layanan resep tidak merespons. Coba lagi sebentar lagi.',
           );
         })
-        .finally(() => setLoading(false));
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
     }
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu?.name]);
+  }, [menu?.name, retryKey]);
 
   // Tidak ada menu & tidak ada resep aktif (mis. deep-link rusak) → fallback.
   if (!menu && !recipe) {
@@ -110,6 +121,14 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
           <Text style={styles.centerText}>
             Jawaban hanya ditampilkan ketika layanan RAG tersedia.
           </Text>
+          <Button
+            title="Coba lagi"
+            onPress={() => {
+              setError(null);
+              setRetryKey((value) => value + 1);
+            }}
+            style={styles.retry}
+          />
         </View>
       ) : displayRecipe ? (
         <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
@@ -237,5 +256,6 @@ const styles = StyleSheet.create({
   stepTimer: { color: colors.primary, fontWeight: '600' },
   stepInstr: { ...typography.bodySm, color: colors.textMuted, marginTop: 2 },
   cta: { marginTop: spacing.xl },
+  retry: { marginTop: spacing.lg, alignSelf: 'stretch' },
   muted: { color: colors.textMuted },
 });

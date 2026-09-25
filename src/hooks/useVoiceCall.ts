@@ -35,6 +35,15 @@ export function useVoiceCall(
   /** Riwayat percakapan suara (dikirim ke API supaya lanjutan nyambung). */
   const historyRef = useRef<HistoryEntry[]>([]);
   const voiceRef = useRef<string | undefined>(undefined);
+  /**
+   * Nomor "generasi" panggilan. Setiap panggilan baru / akhir panggilan menaikkannya.
+   * Callback yang tertinggal dari panggilan lama (jawaban TTS selesai, pendengar mikrofon
+   * berakhir) membandingkan nomornya dan berhenti sendiri — dulu callback lama ini masih
+   * menyalakan ulang pendengar sesudah panggilan ditutup, sehingga panggilan "hidup lagi"
+   * sendiri (mikrofon tampak menyala tanpa alasan).
+   */
+  const callGenerationRef = useRef(0);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     segmentRef.current = segment;
@@ -77,6 +86,9 @@ export function useVoiceCall(
    */
   const stopCall = useCallback(
     async (options?: { keepHistory?: boolean }) => {
+      callGenerationRef.current += 1;
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
       activeRef.current = false;
       processingRef.current = false;
       if (!options?.keepHistory) historyRef.current = [];
@@ -126,6 +138,8 @@ export function useVoiceCall(
           history: historyRef.current,
           useRag: true,
           stream: true,
+          // Kuota token keluaran (dipungut dari versi upstream); 150 ≈ 3x batas 25 kata.
+          maxTokens: 150,
         },
         {
           onToken: (token) => {
@@ -217,7 +231,9 @@ export function useVoiceCall(
         (event: ExpoSpeechRecognitionResultEvent) => {
           if (!activeRef.current) return;
           const text = event.results[0]?.transcript ?? '';
-          if (event.isFinal && text.trim()) {
+          // `!processingRef.current`: jangan memproses kalimat yang sama dua kali kalau
+          // hasil final datang beruntun sebelum pengolahan pertama selesai.
+          if (event.isFinal && text.trim() && !processingRef.current) {
             processingRef.current = true;
             speechModule.stop();
             processUtterance(text.trim());
@@ -234,8 +250,14 @@ export function useVoiceCall(
         },
       );
       const endSubscription = speechModule.addListener('end', () => {
-        setTimeout(() => {
-          if (activeRef.current && !processingRef.current) {
+        const generation = callGenerationRef.current;
+        restartTimerRef.current = setTimeout(() => {
+          restartTimerRef.current = null;
+          if (
+            generation === callGenerationRef.current &&
+            activeRef.current &&
+            !processingRef.current
+          ) {
             listenRef.current().catch(() => undefined);
           }
         }, 500);
@@ -255,6 +277,9 @@ export function useVoiceCall(
   }, [startListening]);
 
   const startCall = useCallback(async () => {
+    callGenerationRef.current += 1;
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    restartTimerRef.current = null;
     activeRef.current = true;
     await startListening();
   }, [startListening]);
@@ -262,6 +287,8 @@ export function useVoiceCall(
   useEffect(
     () => () => {
       activeRef.current = false;
+      callGenerationRef.current += 1;
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       processingRef.current = false;
       streamRef.current?.close();
       Speech.stop();

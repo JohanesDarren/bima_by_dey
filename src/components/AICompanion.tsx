@@ -15,7 +15,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 import { serverFailureText, streamKroomboxChat } from '../services/kroombox';
-import { CHAT_MAX_WORDS, cleanAssistantText } from '../utils/assistantText';
+import { CHAT_MAX_WORDS, CHAT_LOADING_STAGES, cleanAssistantText } from '../utils/assistantText';
 import { buildChefHistory, buildChefMessage } from '../utils/chefPrompt';
 
 interface Props {
@@ -50,6 +50,17 @@ export function AICompanion({
   const streamRef = useRef<{ close: () => void } | null>(null);
   /** Keyboard terbuka → panel chat yang mengisi seluruh ruang sisa layar. */
   const [keyboardUp, setKeyboardUp] = useState(false);
+  /** Tahapan menunggu jawaban (teks bergantian) — lihat CHAT_LOADING_STAGES. */
+  const [loadingStage, setLoadingStage] = useState(0);
+
+  useEffect(() => {
+    if (!streaming) {
+      setLoadingStage(0);
+      return;
+    }
+    const timer = setInterval(() => setLoadingStage((value) => value + 1), 2500);
+    return () => clearInterval(timer);
+  }, [streaming]);
 
   /**
    * Kenapa begini, bukan sekadar "gulir ke bawah saat keyboard muncul": panel ini
@@ -106,6 +117,9 @@ export function AICompanion({
           history: buildChefHistory(messages),
           useRag: true,
           stream: true,
+          // Kuota token keluaran (dipungut dari versi upstream). 250 ≈ 3x batas 30 kata
+          // kita, jadi longgar untuk jawaban benar dan hanya memotong yang berlarut.
+          maxTokens: 250,
         },
         {
           onToken: (delta) => {
@@ -313,7 +327,7 @@ export function AICompanion({
           )}
           {streaming ? (
             <Text style={styles.streamLabel} accessibilityLiveRegion="polite">
-              Sedang menyiapkan jawaban…
+              {CHAT_LOADING_STAGES[loadingStage % CHAT_LOADING_STAGES.length]}
             </Text>
           ) : null}
         </ScrollView>

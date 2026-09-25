@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography } from '../theme';
 import { useVoiceCall } from '../hooks/useVoiceCall';
+import { VOICE_LOADING_STAGES } from '../utils/assistantText';
 import type { Segment } from '../types';
 
 interface Props {
@@ -39,6 +40,17 @@ export function VoiceCallModal({
     recipeIngredients,
   );
   const [muted, setMuted] = useState(false);
+  /** Tahapan menunggu jawaban (teks bergantian) — lihat VOICE_LOADING_STAGES. */
+  const [thinkingStage, setThinkingStage] = useState(0);
+
+  useEffect(() => {
+    if (state !== 'thinking') {
+      setThinkingStage(0);
+      return;
+    }
+    const timer = setInterval(() => setThinkingStage((value) => value + 1), 2500);
+    return () => clearInterval(timer);
+  }, [state]);
 
   useEffect(() => {
     if (!visible) return;
@@ -65,7 +77,7 @@ export function VoiceCallModal({
     : state === 'listening'
       ? 'Silakan bicara'
       : state === 'thinking'
-        ? 'Menyiapkan jawaban'
+        ? VOICE_LOADING_STAGES[thinkingStage % VOICE_LOADING_STAGES.length]
         : state === 'speaking'
           ? 'Chef AI sedang menjawab'
           : state === 'error'

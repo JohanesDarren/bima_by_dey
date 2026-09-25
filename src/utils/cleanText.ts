@@ -14,7 +14,7 @@
  */
 
 /** Buang penanda tingkat baris (judul, kutipan, butir, garis pemisah). */
-export function cleanBlockMarkers(line: string): string {
+function cleanBlockMarkers(line: string): string {
   return line
     .replace(/^\s{0,3}#{1,6}\s*/, '')
     .replace(/^\s{0,3}>\s?/, '')
@@ -55,7 +55,7 @@ function isJunkNote(inner: string): boolean {
 }
 
 /** Potong di batas kata terdekat sebelum batas panjang. */
-export function truncateAt(text: string, max: number): string {
+function truncateAt(text: string, max: number): string {
   const s = text.trim();
   if (s.length <= max) return s;
   const cut = s.slice(0, max);

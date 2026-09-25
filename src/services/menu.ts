@@ -5,9 +5,20 @@ import {
   serverFailureText,
   ServerSideError,
 } from './kroombox';
+import { normalizeRecipeResponse } from './recipeNormalizer';
 import type { FoodCategory, MenuItem, Recipe, RecipeRequest, Segment } from '../types';
 import { isConditionAllowed } from '../constants';
 import { menuKey } from '../utils/menuKey';
+import { limitSentences } from '../utils/assistantText';
+
+/**
+ * Batas token keluaran per jenis permintaan (dipungut dari versi upstream, nilainya
+ * dilebarkan). Dipasang longgar dengan sengaja: keluaran resep kita ±2.600 karakter
+ * (±800 token), jadi 1.800 memberi ruang lega — kalau dipatok ketat, JSON-nya
+ * terpotong dan resepnya malah ditolak lalu minta ulang (menambah waktu tunggu).
+ */
+const RECIPE_MAX_TOKENS = 1800;
+const MENU_MAX_TOKENS = 900;
 
 const CATEGORY_LABEL: Record<FoodCategory, string> = {
   main_course: 'main course (makanan utama)',
@@ -48,12 +59,21 @@ function normalizeCategory(raw: string | undefined | null): FoodCategory {
 
 /** Bersihkan/resapi item menu mentah dari LLM ke MenuItem yang aman. */
 function normalizeMenu(item: Partial<MenuItem>): MenuItem {
+  const nutrition = item.nutrition && typeof item.nutrition === 'object' ? item.nutrition : {};
+  const oneLine = (value: unknown): string => limitSentences(String(value ?? ''), 1);
+  const fewBullets = (value: unknown): string[] =>
+    Array.isArray(value) ? value.slice(0, 2).map((v) => limitSentences(String(v), 1)) : [];
   return {
     name: item.name ?? '(tanpa nama)',
-    description: item.description ?? '',
-    nutrition: item.nutrition && typeof item.nutrition === 'object' ? item.nutrition : {},
-    strengths: Array.isArray(item.strengths) ? item.strengths : [],
-    weaknesses: Array.isArray(item.weaknesses) ? item.weaknesses : [],
+    // Perapian dari versi upstream: deskripsi kartu cukup satu kalimat, kelebihan dan
+    // perhatian maksimal dua butir (masing-masing satu kalimat). Sebelumnya setiap butir
+    // boleh sampai 8 kata tanpa batas jumlah, sehingga kartu di beranda jadi panjang.
+    description: oneLine(item.description ?? ''),
+    nutrition: Object.fromEntries(
+      Object.entries(nutrition).map(([key, value]) => [key, oneLine(value)]),
+    ),
+    strengths: fewBullets(item.strengths),
+    weaknesses: fewBullets(item.weaknesses),
     category: normalizeCategory(item.category),
   };
 }
@@ -75,6 +95,24 @@ function validateSegment(seg: Segment): void {
   if (!isConditionAllowed(seg.ageGroup, seg.condition)) {
     throw new Error('Kombinasi kelompok umur dan kondisi khusus tidak valid.');
   }
+}
+
+/**
+ * Boleh diulang atau tidak. Galat 408/429/5xx (dan galat jaringan yang tidak
+ * membawa kode HTTP) layak dicoba lagi; galat 4xx lain tidak — mengulangnya
+ * hanya membuang waktu pengguna.
+ *
+ * Diambil dari versi upstream (main). PERHATIAN: aturan "jangan ulang saat model
+ * server tumbang" (ServerSideError, lihat services/kroombox.ts) HARUS diperiksa
+ * lebih dulu — galat itu tidak membawa kode HTTP, sehingga fungsi ini akan
+ * menganggapnya layak diulang.
+ */
+function shouldRetryRequest(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  const match = error.message.match(/HTTP (\d{3})/);
+  if (!match) return true;
+  const status = Number(match[1]);
+  return status === 408 || status === 429 || status >= 500;
 }
 
 function promptRecipe(menuName: string, seg: Segment, ulangi = false): string {
@@ -149,16 +187,21 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
         message: promptRecipe(menuName, seg, attempt > 0),
         useRag: true,
         stream: true,
+        maxTokens: RECIPE_MAX_TOKENS,
       });
       // Model di sisi server tumbang → berhenti sekarang, jangan ulang.
       const serverFailure = serverFailureText(r);
       if (serverFailure) throw new ServerSideError(serverFailure);
       if (!r.trim() || /tidak ada teks|maaf/i.test(r.slice(0, 120))) continue;
-      const parsed = extractJson<Recipe>(r);
-      if (parsed && Array.isArray(parsed.steps) && parsed.steps.length > 0) return parsed;
+      // Penorma dari upstream: validasi bentuk + paksa nama resep = nama menu yang
+      // diminta (menutup akar masalah "nama resep beda dari nama menu").
+      const parsed = extractJson<unknown>(r);
+      const recipe = normalizeRecipeResponse(parsed, menuName);
+      if (recipe) return recipe;
     } catch (error) {
       if (error instanceof ServerSideError) throw error;
       lastError = error;
+      if (!shouldRetryRequest(error)) throw error;
     }
   }
   if (lastError instanceof Error) throw lastError;
@@ -185,6 +228,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
         ),
         useRag: true,
         stream: true,
+        maxTokens: MENU_MAX_TOKENS,
       });
       // Model di sisi server tumbang → berhenti sekarang, jangan ulang.
       const serverFailure = serverFailureText(raw);
@@ -202,6 +246,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
     } catch (error) {
       if (error instanceof ServerSideError) throw error;
       lastError = error;
+      if (!shouldRetryRequest(error)) throw error;
     }
   }
   if (lastError instanceof Error && collected.size === 0) throw lastError;

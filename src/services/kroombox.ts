@@ -25,6 +25,12 @@ export interface StreamRequest {
   model?: string | null;
   useRag?: boolean;
   stream?: boolean;
+  /**
+   * Batas token keluaran (dipungut dari versi upstream). Berguna sebagai jaring terhadap
+   * jawaban yang berlarut-larut: panjang keluaran ≈ lama proses. Nilainya sengaja
+   * longgar — dipasang ketat, JSON resep bisa terpotong dan malah minta ulang.
+   */
+  maxTokens?: number;
 }
 
 interface StreamChunk {
@@ -62,18 +68,36 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
       model: req.model ?? null,
       useRag: req.useRag ?? true,
       stream: req.stream ?? true,
+      ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
     }),
     pollingInterval: 0,
   });
 
+  // Satu jalur selesai/gagal saja per permintaan. Tanpa penjaga ini, respons yang tiba
+  // sesudah kita menutup koneksi masih diproses (jawaban bisa dobel), dan "close" yang
+  // datang sesudah [DONE] terbaca sebagai kegagalan palsu.
+  let settled = false;
+  let receivedDelta = false;
+  const done = () => {
+    if (settled) return;
+    settled = true;
+    handlers.onDone();
+    es.close();
+  };
+  const fail = (error: Error) => {
+    if (settled) return;
+    settled = true;
+    handlers.onError(error);
+    es.close();
+  };
+
   es.addEventListener('message', (event) => {
-    if (!event.data) return;
+    if (settled || !event.data) return;
     const raw = event.data;
 
     // Penanda selesai: data: [DONE]
     if (isDoneLine(raw)) {
-      handlers.onDone();
-      es.close();
+      done();
       return;
     }
 
@@ -85,21 +109,21 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
     }
 
     if (chunk.error) {
-      handlers.onError(new Error(chunk.error));
-      es.close();
+      fail(new KroomboxError(chunk.error));
       return;
     }
 
     if (chunk.delta) {
+      receivedDelta = true;
       handlers.onToken(chunk.delta);
       return;
     }
 
-    // Fallback: beberapa deploy kirim {"response": ...} sekaligus walau stream=true
+    // Fallback: beberapa deploy kirim {"response": ...} sekaligus walau stream=true.
+    // Kalau delta sudah pernah masuk, jangan ditambahkan lagi (dulu teksnya dobel).
     if (chunk.response) {
-      handlers.onToken(chunk.response);
-      handlers.onDone();
-      es.close();
+      if (!receivedDelta) handlers.onToken(chunk.response);
+      done();
       return;
     }
 
@@ -109,25 +133,24 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
   });
 
   es.addEventListener('error', (event) => {
-    // react-native-sse tidak selalu menyertakan pesan error yang terbaca.
+    // react-native-sse tidak selalu menyertakan pesan error yang terbaca; kalau ada
+    // kode status, sebutkan angkanya supaya sebabnya kelihatan.
+    const status = 'xhrStatus' in event ? (event as { xhrStatus?: number }).xhrStatus : 0;
     const rawReason =
-      'message' in event && typeof (event as { message?: unknown }).message === 'string'
-        ? ((event as { message: string }).message as string)
-        : event.type === 'timeout'
-          ? 'Timeout menunggu respons BIMA.'
-          : 'Koneksi ke BIMA terputus.';
+      status && status > 0
+        ? `Layanan RAG sedang bermasalah (HTTP ${status}).`
+        : 'message' in event && typeof (event as { message?: unknown }).message === 'string'
+          ? ((event as { message: string }).message as string)
+          : event.type === 'timeout'
+            ? 'Timeout menunggu respons BIMA.'
+            : 'Koneksi ke BIMA terputus.';
     // Pesan bisa KOSONG (server menutup koneksi tanpa keterangan). Dulu pesan kosong
     // diteruskan apa adanya, sehingga layar kehilangan sebabnya dan menampilkan
     // kalimat generik — sebab aslinya jadi tak pernah terlihat.
     const reason =
       humanizeTransportReason(rawReason.trim()) || 'Koneksi ke layanan RAG terputus. Coba lagi.';
     // Pertahankan teks parsial (PRD QA scenario 1) + surface error state.
-    handlers.onError(new Error(reason));
-    es.close();
-  });
-
-  es.addEventListener('open', () => {
-    // Koneksi terbuka — siap menerima delta.
+    fail(new KroomboxError(reason));
   });
 
   return es;
@@ -329,6 +352,7 @@ export async function chatKroombox(req: StreamRequest): Promise<string> {
         model: req.model ?? null,
         useRag: req.useRag ?? true,
         stream: false,
+        ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
       }),
     });
     if (!res.ok) throw new KroomboxError(`Layanan RAG sedang bermasalah (HTTP ${res.status}).`);

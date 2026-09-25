@@ -1,10 +1,16 @@
-import { cleanAssistantText } from './assistantText';
+import { cleanAssistantText, limitSentences } from './assistantText';
 
 /**
  * Pemeriksaan cepat pembersih jawaban. Bukan bagian aplikasi (tidak diimpor layar
  * mana pun) — dijalankan manual saat mengubah `assistantText.ts`.
  */
-const cases: { name: string; input: string; expect: string; maxWords?: number }[] = [
+const cases: {
+  name: string;
+  input: string;
+  expect: string;
+  maxWords?: number;
+  maxSentences?: number;
+}[] = [
   {
     name: 'markdown, emoji, dan label judul dibuang',
     input: '## Jawaban 👨‍🍳\n- **Aduk** bahan.\n- Masak 10 menit ✅',
@@ -77,10 +83,37 @@ const cases: { name: string; input: string; expect: string; maxWords?: number }[
     input: 'Skor kelayakan: 55/100',
     expect: '55/100',
   },
+  {
+    name: 'limitSentences: ambil 2 kalimat pertama',
+    input: 'Pertama jelas. Kedua tepat! Ketiga dibuang.',
+    expect: 'Pertama jelas. Kedua tepat!',
+    maxSentences: 2,
+  },
+  {
+    name: 'limitSentences: angka desimal tidak dianggap batas kalimat',
+    input: 'Gunakan 1.5 liter air. Tambahkan sesuai resep. Selesai.',
+    expect: 'Gunakan 1.5 liter air. Tambahkan sesuai resep.',
+    maxSentences: 2,
+  },
+  {
+    name: 'limitSentences: singkatan "dr." tidak dianggap batas kalimat',
+    input: 'Konsultasikan dengan dr. ahli. Ikuti resep. Selesai.',
+    expect: 'Konsultasikan dengan dr. ahli. Ikuti resep.',
+    maxSentences: 2,
+  },
+  {
+    name: 'limitSentences: kalimat kembar dibuang',
+    input: 'Aduk hingga rata. Aduk hingga rata. Sajikan.',
+    expect: 'Aduk hingga rata. Sajikan.',
+    maxSentences: 5,
+  },
 ];
 
 for (const item of cases) {
-  const got = cleanAssistantText(item.input, { maxWords: item.maxWords });
+  const got =
+    item.maxSentences !== undefined
+      ? limitSentences(item.input, item.maxSentences)
+      : cleanAssistantText(item.input, { maxWords: item.maxWords });
   if (got !== item.expect) {
     throw new Error(`[${item.name}] harap "${item.expect}", dapat "${got}"`);
   }
