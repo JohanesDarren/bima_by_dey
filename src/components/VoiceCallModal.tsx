@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography } from '../theme';
@@ -12,10 +20,24 @@ interface Props {
   segment: Segment;
   recipeName?: string;
   stepLabel?: string;
+  /** Daftar bahan resep yang sedang dimasak — dipakai menjawab pertanyaan pengganti bahan. */
+  recipeIngredients?: string;
 }
 
-export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabel }: Props) {
-  const { state, errorMsg, startCall, stopCall } = useVoiceCall(segment, recipeName, stepLabel);
+export function VoiceCallModal({
+  visible,
+  onClose,
+  segment,
+  recipeName,
+  stepLabel,
+  recipeIngredients,
+}: Props) {
+  const { state, errorMsg, startCall, stopCall } = useVoiceCall(
+    segment,
+    recipeName,
+    stepLabel,
+    recipeIngredients,
+  );
   const [muted, setMuted] = useState(false);
 
   useEffect(() => {
@@ -34,7 +56,7 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
 
   const toggleMute = () => {
     if (muted) startCall();
-    else stopCall();
+    else stopCall({ keepHistory: true });
     setMuted((value) => !value);
   };
 
@@ -75,7 +97,14 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
           </Pressable>
         </View>
 
-        <View style={styles.callArea}>
+        {/* Bagian tengah dibungkus guliran: di layar pendek atau saat huruf sistem
+            diperbesar, isi modal yang tinggi tetap bisa dijangkau dan tombol akhiri
+            panggilan (di luar area gulir) selalu bisa ditekan. */}
+        <ScrollView
+          style={styles.callArea}
+          contentContainerStyle={styles.callAreaContent}
+          showsVerticalScrollIndicator={false}
+        >
           <View
             style={[
               styles.orbOuter,
@@ -107,7 +136,7 @@ export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabe
               </Pressable>
             </View>
           ) : null}
-        </View>
+        </ScrollView>
 
         <View style={styles.controls}>
           <Pressable
@@ -155,11 +184,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.surfaceAlt,
   },
-  callArea: {
-    flex: 1,
+  callArea: { flex: 1 },
+  callAreaContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
   },
   orbOuter: {
     width: 176,

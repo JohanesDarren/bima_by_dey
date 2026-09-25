@@ -239,8 +239,8 @@ export function CookingScreen({ navigation, route }: Props) {
         <AICompanion
           context={
             step
-              ? `Saya sedang memasak "${recipe?.name}". Langkah ${stepIdx + 1}/${steps.length}: ${step.title}. ${step.instruction}. Bantu & temani saya selama proses masak, jawab pertanyaan saat saya ragu.`
-              : `Saya sedang memasak "${recipe?.name}". Temani & bantu saya.`
+              ? `Saya sedang memasak "${recipe?.name}". Bahan resep ini: ${recipe?.ingredients?.length ? recipe.ingredients.join(', ') : 'belum tercatat'}. Langkah ${stepIdx + 1}/${steps.length}: ${step.title}. ${step.instruction}. Bantu & temani saya selama proses masak, jawab pertanyaan saat saya ragu.`
+              : `Saya sedang memasak "${recipe?.name}". Bahan resep ini: ${recipe?.ingredients?.length ? recipe.ingredients.join(', ') : 'belum tercatat'}. Temani & bantu saya.`
           }
           recipeName={recipe.name}
           recipeMeta={`Langkah ${stepIdx + 1} dari ${steps.length}`}
@@ -265,6 +265,9 @@ export function CookingScreen({ navigation, route }: Props) {
             step
               ? `Langkah ${stepIdx + 1}/${steps.length}: ${step.title}. ${step.instruction}`
               : `Langkah ${stepIdx + 1} dari ${steps.length}`
+          }
+          recipeIngredients={
+            recipe?.ingredients?.length ? recipe.ingredients.join(', ') : undefined
           }
         />
       ) : null}

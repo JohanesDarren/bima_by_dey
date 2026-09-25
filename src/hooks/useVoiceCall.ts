@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
-import { streamKroomboxChat, type HistoryEntry } from '../services/kroombox';
-import { cleanAssistantText } from '../utils/assistantText';
-import { VOICE_HISTORY_LIMIT } from '../utils/chefPrompt';
+import { serverFailureText, streamKroomboxChat, type HistoryEntry } from '../services/kroombox';
+import { VOICE_MAX_WORDS, cleanAssistantText } from '../utils/assistantText';
+import { VOICE_HISTORY_LIMIT, VOICE_PERSONA, VOICE_RULES } from '../utils/chefPrompt';
 import type { Segment } from '../types';
 import type {
   ExpoSpeechRecognitionErrorEvent,
@@ -15,7 +15,12 @@ type ActiveStream = { close: () => void };
 
 export type VoiceCallState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
-export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: string) {
+export function useVoiceCall(
+  segment: Segment,
+  recipeName?: string,
+  stepLabel?: string,
+  recipeIngredients?: string,
+) {
   const [state, setState] = useState<VoiceCallState>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -25,7 +30,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   const activeRef = useRef(false);
   const processingRef = useRef(false);
   const segmentRef = useRef(segment);
-  const recipeRef = useRef({ recipeName, stepLabel });
+  const recipeRef = useRef({ recipeName, stepLabel, recipeIngredients });
   const listenRef = useRef<() => Promise<void>>(async () => undefined);
   /** Riwayat percakapan suara (dikirim ke API supaya lanjutan nyambung). */
   const historyRef = useRef<HistoryEntry[]>([]);
@@ -33,8 +38,8 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
 
   useEffect(() => {
     segmentRef.current = segment;
-    recipeRef.current = { recipeName, stepLabel };
-  }, [segment, recipeName, stepLabel]);
+    recipeRef.current = { recipeName, stepLabel, recipeIngredients };
+  }, [segment, recipeName, stepLabel, recipeIngredients]);
 
   useEffect(() => {
     Speech.getAvailableVoicesAsync()
@@ -64,21 +69,30 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
     }
   }, []);
 
-  const stopCall = useCallback(async () => {
-    activeRef.current = false;
-    processingRef.current = false;
-    historyRef.current = [];
-    streamRef.current?.close();
-    streamRef.current = null;
-    setState('idle');
-    Speech.stop();
-    try {
-      moduleRef.current?.abort();
-    } catch {
-      // Recognizer may already be stopped.
-    }
-    cleanupListeners();
-  }, [cleanupListeners]);
+  /**
+   * Akhiri panggilan. `keepHistory` dipakai tombol MATIKAN MIKROFON: mute lalu
+   * nyalakan lagi tidak boleh menghapus memori percakapan. (Dulu pengosongan
+   * riwayat ditaruh langsung di sini tanpa melihat siapa saja yang memanggilnya,
+   * sehingga mute terasa seperti mengulang panggilan dari nol.)
+   */
+  const stopCall = useCallback(
+    async (options?: { keepHistory?: boolean }) => {
+      activeRef.current = false;
+      processingRef.current = false;
+      if (!options?.keepHistory) historyRef.current = [];
+      streamRef.current?.close();
+      streamRef.current = null;
+      setState('idle');
+      Speech.stop();
+      try {
+        moduleRef.current?.abort();
+      } catch {
+        // Recognizer may already be stopped.
+      }
+      cleanupListeners();
+    },
+    [cleanupListeners],
+  );
 
   const resumeListening = useCallback(() => {
     processingRef.current = false;
@@ -96,14 +110,17 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
       streamRef.current = streamKroomboxChat(
         {
           message: [
+            VOICE_PERSONA,
             `Resep: ${recipeRef.current.recipeName || 'belum dipilih'}.`,
             `Langkah aktif: ${recipeRef.current.stepLabel || 'tidak ada'}.`,
+            `Bahan resep ini: ${recipeRef.current.recipeIngredients || 'belum tercatat'}.`,
             `Profil: ${segmentRef.current.ageGroup || 'umum'}, ${segmentRef.current.condition || 'umum'}.`,
+            // Aturan dasar versi upstream apa adanya + tambahan kita, disimpan di
+            // chefPrompt.ts supaya bentuk jawaban Chef dan suara tidak berkelahi.
+            ...VOICE_RULES,
+            // Pertanyaan di ujung (bukan di tengah): aturan yang menumpuk SETELAH
+            // pertanyaan membuat jawaban suara melenceng dari yang ditanya.
             `Pertanyaan: ${text}`,
-            'Jawab berdasarkan RAG. Langsung jawab inti pertanyaan dalam maksimal 2 kalimat pendek.',
-            'Tanpa pembuka, pengulangan pertanyaan, daftar, markdown, emoji, simbol dekoratif, atau penutup basa-basi.',
-            'Bulatkan angka dan tulis dengan kata; hindari simbol yang janggal diucapkan mesin suara seperti %, /, dan ±.',
-            'Jika RAG tidak mendukung jawaban, katakan singkat dan jujur.',
           ].join('\n'),
           // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
           history: historyRef.current,
@@ -117,7 +134,17 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
           onDone: () => {
             streamRef.current = null;
             if (!activeRef.current) return;
-            const spoken = cleanAssistantText(response);
+            // Server kadang mengirim pesan kegagalannya sendiri sebagai "jawaban"
+            // (mis. "Server AI gagal merespons: Error code: 503 …"). Jangan dibacakan
+            // seolah-olah itu jawaban masakan.
+            const failure = serverFailureText(response);
+            if (failure) {
+              processingRef.current = false;
+              setState('error');
+              setErrorMsg(failure);
+              return;
+            }
+            const spoken = cleanAssistantText(response, { maxWords: VOICE_MAX_WORDS });
             if (!spoken) {
               processingRef.current = false;
               setState('error');

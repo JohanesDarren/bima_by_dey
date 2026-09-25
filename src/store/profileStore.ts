@@ -54,10 +54,16 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
 
   fetchProfile: async (userId) => {
     set({ loading: true, error: null });
-    // Guest: serve from MMKV cache immediately.
+    // Guest: serve from MMKV cache immediately (nilai lama tetap diperiksa dulu —
+    // perangkat bisa menyimpan kondisi yang sudah tidak ada di daftar, dan nilai
+    // itu ikut terkirim ke RAG tanpa terlihat di layar).
     if (localStore.isGuestMode()) {
       const cached = localStore.getCachedProfile<Profile>();
-      set({ loading: false, profile: cached, hydrated: true });
+      set({
+        loading: false,
+        profile: cached ? normalizeRow(cached as unknown as Record<string, unknown>) : null,
+        hydrated: true,
+      });
       return;
     }
 

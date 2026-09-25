@@ -14,9 +14,9 @@ import * as Speech from 'expo-speech';
 import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
-import { streamKroomboxChat } from '../services/kroombox';
-import { cleanAssistantText } from '../utils/assistantText';
-import { buildChefHistory } from '../utils/chefPrompt';
+import { serverFailureText, streamKroomboxChat } from '../services/kroombox';
+import { CHAT_MAX_WORDS, cleanAssistantText } from '../utils/assistantText';
+import { buildChefHistory, buildChefMessage } from '../utils/chefPrompt';
 
 interface Props {
   context: string;
@@ -99,21 +99,9 @@ export function AICompanion({
 
       streamRef.current = streamKroomboxChat(
         {
-          message: [
-            context,
-            `Pertanyaan pengguna: ${text}`,
-            // Aturan pokok milik Johanes dipertahankan. Empat baris di bawah tambahan
-            // kita: tanpa batas panjang + "jawab lengkap", jawaban Chef melebar
-            // (mis. ditanya "bisa kalau tepung tidak disangrai?" dijawab cerita
-            // panjang ke sana-sini). Batas panjang hanya bisa ditekan lewat prompt —
-            // API RAG tidak menerima kolom batas token.
-            'Jawab langsung ke inti berdasarkan RAG: awali dengan jawabannya, bukan penjelasan panjang.',
-            'Gunakan paragraf biasa. Jangan gunakan emoji, logo, emblem, ikon, markdown, heading, atau simbol dekoratif.',
-            'Hindari pembuka, pengulangan pertanyaan, dan penutup basa-basi yang tidak perlu.',
-            'Maksimal 60 kata. Tanpa salam, tanpa pendahuluan, dan tanpa mengulang resep atau bahan yang sudah dibahas.',
-            'Hanya bahas yang ditanya. Jangan menambah saran gizi, tips, atau topik lain yang tidak diminta.',
-            'Kalau pertanyaan bisa dijawab ya/tidak: mulai dengan ya/tidak lalu satu alasan singkat. Kalau memang perlu langkah, tulis maksimal 3 poin pendek.',
-          ].join('\n\n'),
+          // Susunan pesan (persona + konteks + aturan dasar upstream + tambahan kita +
+          // pertanyaan di ujung) ada di chefPrompt.ts supaya aturannya satu tempat.
+          message: buildChefMessage(context, text),
           // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
           history: buildChefHistory(messages),
           useRag: true,
@@ -122,7 +110,11 @@ export function AICompanion({
         {
           onToken: (delta) => {
             assistantText += delta;
-            const clean = cleanAssistantText(assistantText);
+            // Kalau server mengirim pesan kegagalannya sendiri, tampilkan kalimat
+            // jujurnya — jangan biarkan teks teknis "Error code: 503 …" jadi balon jawaban.
+            const failure = serverFailureText(assistantText);
+            const clean =
+              failure ?? cleanAssistantText(assistantText, { maxWords: CHAT_MAX_WORDS });
             setMessages((current) => {
               const next = [...current];
               const last = next[next.length - 1];
@@ -137,13 +129,22 @@ export function AICompanion({
             streamRef.current = null;
             setMessages((current) => {
               const last = current[current.length - 1];
-              if (last?.role === 'assistant' && last.content) {
-                const clean = cleanAssistantText(last.content);
-                if (autoSpeak) speak(clean);
-                onAssistantMessage?.(clean);
-                return [...current.slice(0, -1), { ...last, content: clean }];
+              if (last?.role !== 'assistant') return current;
+              if (!last.content.trim()) {
+                // Server menutup koneksi tanpa satu pun potongan jawaban. Jangan
+                // biarkan balon KOSONG menggantung — pengguna merasa tidak dijawab
+                // dan tidak tahu kenapa. Katakan apa adanya.
+                return [
+                  ...current.slice(0, -1),
+                  { ...last, content: 'Layanan tidak mengirim jawaban. Coba kirim lagi.' },
+                ];
               }
-              return current;
+              const failure = serverFailureText(last.content);
+              const clean =
+                failure ?? cleanAssistantText(last.content, { maxWords: CHAT_MAX_WORDS });
+              if (autoSpeak && !failure) speak(clean);
+              onAssistantMessage?.(clean);
+              return [...current.slice(0, -1), { ...last, content: clean }];
             });
           },
           onError: () => {

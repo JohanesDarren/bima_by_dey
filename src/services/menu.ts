@@ -1,4 +1,10 @@
-import { chatKroombox, extractJson, extractJsonArray } from './kroombox';
+import {
+  chatKroombox,
+  extractJson,
+  extractJsonArray,
+  serverFailureText,
+  ServerSideError,
+} from './kroombox';
 import type { FoodCategory, MenuItem, Recipe, RecipeRequest, Segment } from '../types';
 import { isConditionAllowed } from '../constants';
 import { menuKey } from '../utils/menuKey';
@@ -71,13 +77,17 @@ function validateSegment(seg: Segment): void {
   }
 }
 
-function promptRecipe(menuName: string, seg: Segment): string {
+function promptRecipe(menuName: string, seg: Segment, ulangi = false): string {
+  // Bentuk keluaran ditaruh di UJUNG pesan. Terukur di lapangan: kalau permintaan JSON
+  // ditulis di awal lalu disusul deretan aturan, model justru menyalin dokumen basis
+  // pengetahuan ("## Konsep Produk …") dan JSON-nya tidak pernah keluar.
+  const bentuk =
+    '{"name": string, "servings": number, "ingredients": [string], "steps": [{"order": number, "title": string, "instruction": string detail, "durationMinutes": number|null}], "totalMinutes": number}';
   return [
-    `Buatkan resep lengkap dan detail untuk "${menuName}" yang sesuai:`,
+    ulangi
+      ? `Balasan sebelumnya SALAH BENTUK (bukan JSON). Tulis ulang resep "${menuName}" sekarang.`
+      : `Buatkan resep lengkap dan detail untuk "${menuName}" yang sesuai:`,
     segmentLabel(seg),
-    '',
-    'Jawab HANYA JSON (tanpa teks lain, tanpa markdown fence):',
-    '{"name": string, "servings": number, "ingredients": [string], "steps": [{"order": number, "title": string, "instruction": string detail, "durationMinutes": number|null}], "totalMinutes": number}',
     '',
     'Aturan:',
     '- Pecah resep menjadi langkah detail (5-10 langkah) yang bisa diikuti selangkah demi selangkah.',
@@ -86,12 +96,27 @@ function promptRecipe(menuName: string, seg: Segment): string {
     '- Bahan: SATU baris = nama bahan + jumlah + satuan. DILARANG menulis tanda kurung, angka persen, atau keterangan di belakang bahan. Contoh benar: "150 g tepung sorgum". Contoh salah: "150 g tepung sorgum (±55% dari tepung)".',
     '- Pakai nama bahan yang lazim di dapur, bukan nama ilmiah atau kode.',
     '- instruction: satu sampai dua kalimat praktis; sebutkan api, alat, atau tingkat kematangan bila perlu.',
+    '- Setiap langkah WAJIB menyambung hasil langkah sebelumnya dan menyebutkan tindakannya pada hasil itu (mis. "masukkan tumisan bumbu tadi"). DILARANG meninggalkan langkah menggantung tanpa kelanjutan.',
+    '- DILARANG menyebut bahan atau alat yang belum disiapkan di daftar bahan maupun langkah sebelumnya.',
+    '- Semua bahan pada daftar ingredients WAJIB dipakai di langkah; dan setiap bahan yang dipakai di langkah WAJIB ada di daftar ingredients.',
+    '- Setiap kunci JSON WAJIB diapit tanda kutip ganda.',
+    '',
+    'Jawab HANYA JSON ini — mulai langsung dengan { dan akhiri dengan }, tanpa kalimat pembuka, tanpa markdown, tanpa penjelasan sesudahnya:',
+    bentuk,
+    'JANGAN menyalin atau merangkum isi dokumen basis pengetahuan, dan JANGAN menulis judul seperti "Konsep Produk" atau "Catatan Verifikasi". Jangan menyebut harga.',
   ].join('\n');
 }
 
-function promptSearchRecipe(seg: Segment, category: FoodCategory, excludedNames: string[]): string {
+function promptSearchRecipe(
+  seg: Segment,
+  category: FoodCategory,
+  excludedNames: string[],
+  ulangi = false,
+): string {
   return [
-    'Buat TEPAT 3 rekomendasi menu olahan sorgum.',
+    ulangi
+      ? 'Balasan sebelumnya SALAH BENTUK (bukan JSON array). Tulis ulang sekarang.'
+      : 'Buat TEPAT 3 rekomendasi menu olahan sorgum.',
     segmentLabel(seg),
     `Kategori WAJIB: ${CATEGORY_LABEL[category]}. Semua menu harus termasuk kategori ini.`,
     'WAJIB pertimbangkan kelompok umur DAN kondisi khusus secara bersamaan.',
@@ -101,9 +126,12 @@ function promptSearchRecipe(seg: Segment, category: FoodCategory, excludedNames:
     'Ketiga nama menu harus berbeda satu sama lain.',
     'description: maksimal 2 kalimat pendek (sekitar 25 kata), tanpa tanda kurung dan tanpa angka persen.',
     'strengths dan weaknesses: maksimal 8 kata per butir.',
+    'nutrition cukup {"calories": number, "protein": number, "fiber": number} — jangan tambah field lain.',
+    'Setiap kunci JSON WAJIB diapit tanda kutip ganda. Jangan menulis analisis harga, alergen, catatan verifikasi, atau skor kelayakan.',
     '',
-    'Jawab HANYA JSON array (tanpa teks lain, tanpa markdown fence):',
-    '[{"name": string, "description": string, "nutrition": {calories, protein, fiber, key_vitamins, minerals, notes}, "strengths": [string], "weaknesses": [string], "category": "main_course|soup|dessert|snack|beverage|other"}]',
+    'Jawab HANYA JSON array (tanpa teks lain, tanpa markdown fence, tanpa penjelasan sesudah JSON):',
+    '[{"name": string, "description": string, "nutrition": {"calories": number, "protein": number, "fiber": number}, "strengths": [string], "weaknesses": [string], "category": "main_course|soup|dessert|snack|beverage|other"}]',
+    'JANGAN menyalin atau merangkum isi dokumen basis pengetahuan, dan JANGAN menulis judul seperti "Konsep Produk" atau "Catatan Verifikasi". Jangan menyebut harga.',
   ].join('\n');
 }
 
@@ -113,17 +141,23 @@ function promptSearchRecipe(seg: Segment, category: FoodCategory, excludedNames:
 export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe> {
   validateSegment(seg);
   let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Dua percobaan saja (bukan tiga): satu permintaan ke RAG terukur 75-225 detik,
+  // jadi percobaan ketiga hanya menambah lamanya menunggu ketika layanan lambat.
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const r = await chatKroombox({
-        message: promptRecipe(menuName, seg),
+        message: promptRecipe(menuName, seg, attempt > 0),
         useRag: true,
         stream: true,
       });
+      // Model di sisi server tumbang → berhenti sekarang, jangan ulang.
+      const serverFailure = serverFailureText(r);
+      if (serverFailure) throw new ServerSideError(serverFailure);
       if (!r.trim() || /tidak ada teks|maaf/i.test(r.slice(0, 120))) continue;
       const parsed = extractJson<Recipe>(r);
       if (parsed && Array.isArray(parsed.steps) && parsed.steps.length > 0) return parsed;
     } catch (error) {
+      if (error instanceof ServerSideError) throw error;
       lastError = error;
     }
   }
@@ -140,16 +174,21 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
   let lastError: unknown;
   const excluded = new Set((req.excludedNames ?? []).map(menuKey));
   const collected = new Map<string, MenuItem>();
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const raw = await chatKroombox({
-        message: promptSearchRecipe(req.segment, req.category, [
-          ...(req.excludedNames ?? []),
-          ...[...collected.values()].map((menu) => menu.name),
-        ]),
+        message: promptSearchRecipe(
+          req.segment,
+          req.category,
+          [...(req.excludedNames ?? []), ...[...collected.values()].map((menu) => menu.name)],
+          attempt > 0,
+        ),
         useRag: true,
         stream: true,
       });
+      // Model di sisi server tumbang → berhenti sekarang, jangan ulang.
+      const serverFailure = serverFailureText(raw);
+      if (serverFailure) throw new ServerSideError(serverFailure);
       if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
       const parsed = extractJsonArray<MenuItem>(raw);
       if (!parsed) continue;
@@ -161,6 +200,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
         if (collected.size === 3) return [...collected.values()];
       }
     } catch (error) {
+      if (error instanceof ServerSideError) throw error;
       lastError = error;
     }
   }

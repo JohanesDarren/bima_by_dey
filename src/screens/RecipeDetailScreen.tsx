@@ -15,6 +15,7 @@ import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
 import { menuKey } from '../utils/menuKey';
 import { cleanFoodText } from '../utils/cleanText';
+import type { Recipe } from '../types';
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RecipeDetail'>;
@@ -38,23 +39,39 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
   const { menu } = route.params ?? {};
   const segment = useFlowStore((s) => s.segment);
   const activeRecipe = useFlowStore((s) => s.activeRecipe);
+  const activeMenu = useFlowStore((s) => s.activeMenu);
   const loadRecipe = useFlowStore((s) => s.loadRecipe);
 
-  const [loading, setLoading] = useState(() =>
-    Boolean(menu && (!activeRecipe || !sameMenu(activeRecipe.name, menu.name))),
-  );
+  /**
+   * Resep yang BARU SAJA dimuat untuk menu ini. Ditampilkan langsung tanpa
+   * membandingkan nama: nama resep dari AI sering menambah/mengurangi kata dari
+   * nama menu ("Bubur Sorgum Ayam" vs "Bubur Sorgum Ayam Sayur"), dan dulu
+   * perbandingan nama itu membuang resep yang sudah berhasil dimuat — layar
+   * menampilkan "Resep RAG belum tersedia" padahal datanya ada.
+   */
+  const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null);
+  /** Resep di store memang milik menu ini, diketahui dari menu yang diminta. */
+  const storeRecipeIsThisMenu = Boolean(menu && activeMenu && sameMenu(activeMenu.name, menu.name));
+  const [loading, setLoading] = useState(() => Boolean(menu && !storeRecipeIsThisMenu));
   const [error, setError] = useState<string | null>(null);
   const recipe = activeRecipe;
 
   useEffect(() => {
-    // Dari Browse: menu diberikan → ambil resep (bila belum cocok dgn aktif).
+    // Dari Browse: menu diberikan → ambil resep (bila store belum punya resep menu ini).
     if (!menu) return;
-    if (!sameMenu(recipe?.name, menu.name)) {
+    if (!storeRecipeIsThisMenu) {
       setLoading(true);
       setError(null);
       loadRecipe(menu, segment)
         .then((loaded) => {
-          if (!loaded) setError(useFlowStore.getState().menusError || 'Resep RAG belum tersedia.');
+          if (loaded) {
+            setLoadedRecipe(loaded);
+            return;
+          }
+          setError(
+            useFlowStore.getState().menusError ||
+              'Layanan resep tidak merespons. Coba lagi sebentar lagi.',
+          );
         })
         .finally(() => setLoading(false));
     }
@@ -70,7 +87,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const displayRecipe = menu ? (sameMenu(recipe?.name, menu.name) ? recipe : null) : recipe;
+  const displayRecipe = menu ? (loadedRecipe ?? (storeRecipeIsThisMenu ? recipe : null)) : recipe;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -153,7 +170,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
         </ScrollView>
       ) : (
         <View style={styles.centerBox}>
-          <Text style={styles.errorText}>Resep RAG belum tersedia.</Text>
+          <Text style={styles.errorText}>Resep dari layanan belum bisa dibaca.</Text>
           <Text style={styles.centerText}>Kembali dan coba lagi setelah layanan pulih.</Text>
         </View>
       )}
