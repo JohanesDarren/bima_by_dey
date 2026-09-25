@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,19 +14,9 @@ import * as Speech from 'expo-speech';
 import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
-import { streamKroomboxChat } from '../services/kroombox';
-import {
-  cleanAssistantText,
-  compactAssistantAnswer,
-  COMPACT_RAG_STANDARD,
-} from '../utils/assistantText';
-import type {
-  ExpoSpeechRecognitionErrorEvent,
-  ExpoSpeechRecognitionResultEvent,
-} from 'expo-speech-recognition';
-
-type SpeechModule = (typeof import('expo-speech-recognition'))['ExpoSpeechRecognitionModule'];
-type EventSubscription = { remove: () => void };
+import { serverFailureText, streamKroomboxChat } from '../services/kroombox';
+import { CHAT_MAX_WORDS, CHAT_LOADING_STAGES, cleanAssistantText } from '../utils/assistantText';
+import { buildChefHistory, buildChefMessage } from '../utils/chefPrompt';
 
 interface Props {
   context: string;
@@ -39,12 +30,6 @@ interface Props {
 }
 
 const SUGGESTIONS = ['Pengganti bahan?', 'Ubah jumlah porsi?', 'Jelaskan langkah ini'];
-const LOADING_STAGES = [
-  'Menghubungkan ke pengetahuan sorgum…',
-  'Mencari konteks yang relevan…',
-  'Memeriksa kecocokan dengan resep…',
-  'Merangkum jawaban terbaik…',
-];
 
 export function AICompanion({
   context,
@@ -61,44 +46,47 @@ export function AICompanion({
   const [streaming, setStreaming] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(!simple);
   const [lastQuestion, setLastQuestion] = useState('');
-  const [recording, setRecording] = useState(false);
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [loadingStage, setLoadingStage] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const streamRef = useRef<{ close: () => void } | null>(null);
-  const speechModuleRef = useRef<SpeechModule | null>(null);
-  const speechListenersRef = useRef<EventSubscription[]>([]);
-
-  const cleanupVoiceMessage = useCallback(() => {
-    speechListenersRef.current.forEach((listener) => listener.remove());
-    speechListenersRef.current = [];
-    setRecording(false);
-  }, []);
+  /** Keyboard terbuka → panel chat yang mengisi seluruh ruang sisa layar. */
+  const [keyboardUp, setKeyboardUp] = useState(false);
+  /** Tahapan menunggu jawaban (teks bergantian) — lihat CHAT_LOADING_STAGES. */
+  const [loadingStage, setLoadingStage] = useState(0);
 
   useEffect(() => {
     if (!streaming) {
       setLoadingStage(0);
       return;
     }
-    const timer = setInterval(
-      () => setLoadingStage((current) => Math.min(current + 1, LOADING_STAGES.length - 1)),
-      2200,
-    );
+    const timer = setInterval(() => setLoadingStage((value) => value + 1), 2500);
     return () => clearInterval(timer);
   }, [streaming]);
+
+  /**
+   * Kenapa begini, bukan sekadar "gulir ke bawah saat keyboard muncul": panel ini
+   * berada di dalam guliran layar, dan jendela Android berubah ukuran SETELAH
+   * perintah gulir berjalan — jadi posisinya meleset dan kolom tulis tetap
+   * tertutup. Di sini tidak ada tebakan waktu: saat keyboard muncul, panel dipaksa
+   * mengisi ruang sisa (flex), sehingga kolom tulis selalu tepat di atas keyboard.
+   */
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardUp(true);
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardUp(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(
     () => () => {
       streamRef.current?.close();
       Speech.stop();
-      cleanupVoiceMessage();
-      try {
-        speechModuleRef.current?.abort();
-      } catch {
-        // Recognizer may already be stopped.
-      }
     },
-    [cleanupVoiceMessage],
+    [],
   );
 
   const speak = useCallback((text: string) => {
@@ -112,13 +100,6 @@ export function AICompanion({
       if (!text || streaming) return;
       setLastQuestion(text);
       setInput('');
-      const history = messages
-        .filter((message) => message.content.trim())
-        .slice(-10)
-        .map((message) => ({
-          role: message.role as 'user' | 'assistant',
-          content: message.content,
-        }));
       setMessages((current) => [
         ...current,
         { role: 'user', content: text, reasoning_content: null },
@@ -129,23 +110,25 @@ export function AICompanion({
 
       streamRef.current = streamKroomboxChat(
         {
-          message: [
-            context,
-            `Pertanyaan pengguna: ${text}`,
-            COMPACT_RAG_STANDARD,
-            'Berikan jawaban inti pada kalimat pertama. Maksimal 5 kalimat atau 80 kata, ringkas, lengkap, dan relevan.',
-            'Gunakan paragraf biasa. Jangan gunakan emoji, logo, emblem, ikon, markdown, heading, atau simbol dekoratif.',
-            'Hindari pembuka, pengulangan pertanyaan, dan penutup basa-basi yang tidak perlu.',
-          ].join('\n\n'),
+          // Susunan pesan (persona + konteks + aturan dasar upstream + tambahan kita +
+          // pertanyaan di ujung) ada di chefPrompt.ts supaya aturannya satu tempat.
+          message: buildChefMessage(context, text),
+          // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
+          history: buildChefHistory(messages),
           useRag: true,
           stream: true,
+          // Kuota token keluaran (dipungut dari versi upstream). 250 ≈ 3x batas 30 kata
+          // kita, jadi longgar untuk jawaban benar dan hanya memotong yang berlarut.
           maxTokens: 250,
-          history,
         },
         {
           onToken: (delta) => {
             assistantText += delta;
-            const clean = cleanAssistantText(assistantText);
+            // Kalau server mengirim pesan kegagalannya sendiri, tampilkan kalimat
+            // jujurnya — jangan biarkan teks teknis "Error code: 503 …" jadi balon jawaban.
+            const failure = serverFailureText(assistantText);
+            const clean =
+              failure ?? cleanAssistantText(assistantText, { maxWords: CHAT_MAX_WORDS });
             setMessages((current) => {
               const next = [...current];
               const last = next[next.length - 1];
@@ -158,30 +141,24 @@ export function AICompanion({
           onDone: () => {
             setStreaming(false);
             streamRef.current = null;
-            const clean = compactAssistantAnswer(assistantText, 5, 80);
-            if (!clean) {
-              setMessages((current) => {
-                const next = [...current];
-                if (next[next.length - 1]?.role === 'assistant') next.pop();
-                return [
-                  ...next,
-                  {
-                    role: 'assistant',
-                    content: 'RAG belum memberikan jawaban. Coba lagi.',
-                    reasoning_content: null,
-                  },
-                ];
-              });
-              return;
-            }
-            if (autoSpeak) speak(clean);
-            onAssistantMessage?.(clean);
             setMessages((current) => {
               const last = current[current.length - 1];
-              if (last?.role === 'assistant' && last.content) {
-                return [...current.slice(0, -1), { ...last, content: clean }];
+              if (last?.role !== 'assistant') return current;
+              if (!last.content.trim()) {
+                // Server menutup koneksi tanpa satu pun potongan jawaban. Jangan
+                // biarkan balon KOSONG menggantung — pengguna merasa tidak dijawab
+                // dan tidak tahu kenapa. Katakan apa adanya.
+                return [
+                  ...current.slice(0, -1),
+                  { ...last, content: 'Layanan tidak mengirim jawaban. Coba kirim lagi.' },
+                ];
               }
-              return current;
+              const failure = serverFailureText(last.content);
+              const clean =
+                failure ?? cleanAssistantText(last.content, { maxWords: CHAT_MAX_WORDS });
+              if (autoSpeak && !failure) speak(clean);
+              onAssistantMessage?.(clean);
+              return [...current.slice(0, -1), { ...last, content: clean }];
             });
           },
           onError: () => {
@@ -190,15 +167,12 @@ export function AICompanion({
             setMessages((current) => {
               const next = [...current];
               const last = next[next.length - 1];
-              const partial = last?.role === 'assistant' ? cleanAssistantText(last.content) : '';
-              if (last?.role === 'assistant') next.pop();
+              if (last?.role === 'assistant' && !last.content) next.pop();
               return [
                 ...next,
                 {
                   role: 'assistant',
-                  content: partial
-                    ? `Jawaban terputus dan mungkin belum lengkap: ${partial}`
-                    : 'Koneksi terputus. Coba kirim lagi.',
+                  content: 'Koneksi terputus. Coba kirim lagi.',
                   reasoning_content: null,
                 },
               ];
@@ -207,6 +181,8 @@ export function AICompanion({
         },
       );
     },
+    // `messages` ikut jadi dependensi: riwayat percakapan dibangun saat kirim,
+    // jadi kalau tidak, yang terkirim bisa riwayat dari render lama (basi).
     [autoSpeak, context, input, messages, onAssistantMessage, speak, streaming],
   );
 
@@ -214,75 +190,21 @@ export function AICompanion({
     streamRef.current?.close();
     streamRef.current = null;
     setStreaming(false);
-    setMessages((current) => {
-      const last = current[current.length - 1];
-      return last?.role === 'assistant' && !last.content ? current.slice(0, -1) : current;
-    });
   };
 
-  const toggleVoiceMessage = useCallback(async () => {
-    if (streaming) return;
-    if (recording) {
-      speechModuleRef.current?.stop();
-      cleanupVoiceMessage();
-      return;
-    }
-
-    setVoiceError(null);
-    try {
-      const imported = await import('expo-speech-recognition');
-      const speechModule = imported.ExpoSpeechRecognitionModule;
-      speechModuleRef.current = speechModule;
-      const permission = await speechModule.requestPermissionsAsync();
-      if (!permission.granted) {
-        setVoiceError('Izin mikrofon diperlukan.');
-        return;
-      }
-
-      cleanupVoiceMessage();
-      const resultListener = speechModule.addListener(
-        'result',
-        (event: ExpoSpeechRecognitionResultEvent) => {
-          const transcript = event.results[0]?.transcript?.trim() ?? '';
-          if (transcript) setInput(transcript);
-          if (event.isFinal && transcript) {
-            cleanupVoiceMessage();
-            try {
-              speechModule.stop();
-            } catch {
-              // Final recognition may stop itself.
-            }
-            send(transcript);
-          }
-        },
-      );
-      const errorListener = speechModule.addListener(
-        'error',
-        (event: ExpoSpeechRecognitionErrorEvent) => {
-          cleanupVoiceMessage();
-          if (event.error !== 'aborted') {
-            setVoiceError(
-              event.error === 'no-speech' || event.error === 'speech-timeout'
-                ? 'Suara belum terdengar. Coba lagi.'
-                : 'Pesan suara gagal direkam.',
-            );
-          }
-        },
-      );
-      const endListener = speechModule.addListener('end', cleanupVoiceMessage);
-      speechListenersRef.current = [resultListener, errorListener, endListener];
-      setRecording(true);
-      speechModule.start({ lang: 'id-ID', interimResults: true, continuous: false });
-    } catch (error: unknown) {
-      console.warn('[AICompanion] Voice message unavailable', error);
-      cleanupVoiceMessage();
-      setVoiceError('Pesan suara tidak tersedia di perangkat ini.');
-    }
-  }, [cleanupVoiceMessage, recording, send, streaming]);
-
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[styles.panel, compact && styles.panelCompact, elevation.sm]}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={keyboardUp ? styles.fill : undefined}
+    >
+      <View
+        style={[
+          styles.panel,
+          compact && styles.panelCompact,
+          keyboardUp && styles.fill,
+          elevation.sm,
+        ]}
+      >
         <View style={[styles.recipeCard, simple && styles.hidden]}>
           <View style={styles.recipeInitials}>
             <Text style={styles.recipeInitialsText}>
@@ -312,14 +234,16 @@ export function AICompanion({
             disabled={!onVoiceCall}
             style={styles.modeButton}
           >
-            <Text style={styles.modeText}>Suara</Text>
+            <MaterialIcons name="phone-in-talk" size={16} color={colors.textMuted} />
+            <Text style={styles.modeText}>Panggilan Suara</Text>
           </Pressable>
           <View
             accessibilityRole="tab"
             accessibilityState={{ selected: true }}
             style={[styles.modeButton, styles.modeButtonActive]}
           >
-            <Text style={styles.modeTextActive}>Chat</Text>
+            <MaterialIcons name="chat-bubble-outline" size={16} color={colors.accent} />
+            <Text style={styles.modeTextActive}>Chat Teks</Text>
           </View>
         </View>
 
@@ -363,8 +287,9 @@ export function AICompanion({
 
         <ScrollView
           ref={scrollRef}
-          style={styles.messages}
+          style={[styles.messages, keyboardUp && styles.messagesKeyboard]}
           contentContainerStyle={styles.messagesContent}
+          nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
@@ -402,7 +327,7 @@ export function AICompanion({
           )}
           {streaming ? (
             <Text style={styles.streamLabel} accessibilityLiveRegion="polite">
-              {LOADING_STAGES[loadingStage]}
+              {CHAT_LOADING_STAGES[loadingStage % CHAT_LOADING_STAGES.length]}
             </Text>
           ) : null}
         </ScrollView>
@@ -441,31 +366,11 @@ export function AICompanion({
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder={recording ? 'Sedang mendengarkan…' : placeholder || 'Tulis pertanyaan…'}
+            placeholder={placeholder || 'Tulis pertanyaan…'}
             placeholderTextColor={colors.textSubtle}
             onSubmitEditing={() => send()}
-            editable={!recording}
             multiline
           />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={recording ? 'Hentikan pesan suara' : 'Kirim pesan suara'}
-            accessibilityState={{ selected: recording, disabled: streaming }}
-            onPress={toggleVoiceMessage}
-            disabled={streaming}
-            style={({ pressed }) => [
-              styles.voiceButton,
-              recording && styles.voiceButtonRecording,
-              streaming && styles.sendDisabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialIcons
-              name={recording ? 'stop' : 'mic'}
-              size={20}
-              color={recording ? colors.white : colors.primary}
-            />
-          </Pressable>
           <Pressable
             accessibilityLabel={streaming ? 'Hentikan jawaban' : 'Kirim pesan'}
             onPress={streaming ? stop : () => send()}
@@ -483,11 +388,6 @@ export function AICompanion({
             )}
           </Pressable>
         </View>
-        {voiceError ? (
-          <Text style={styles.voiceError} accessibilityLiveRegion="polite">
-            {voiceError}
-          </Text>
-        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -539,9 +439,9 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     padding: 4,
     borderRadius: radius.lg,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: colors.primaryDark,
+    borderColor: colors.border,
     flexDirection: 'row',
   },
   modeButton: {
@@ -553,9 +453,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
   },
-  modeButtonActive: { backgroundColor: colors.accent },
-  modeText: { ...typography.caption, color: colors.textOnPrimary, fontWeight: '700' },
-  modeTextActive: { ...typography.caption, color: colors.primaryDark, fontWeight: '800' },
+  modeButtonActive: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.accent },
+  modeText: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
+  modeTextActive: { ...typography.caption, color: colors.primary, fontWeight: '800' },
   dateRow: { alignItems: 'center', paddingTop: spacing.md },
   dateText: {
     ...typography.label,
@@ -595,6 +495,9 @@ const styles = StyleSheet.create({
   },
   speakToggleOn: { backgroundColor: colors.accent },
   messages: { maxHeight: 280, minHeight: 130 },
+  /** Keyboard terbuka: panel & daftar pesan mengisi ruang sisa, bukan tinggi tetap. */
+  fill: { flex: 1 },
+  messagesKeyboard: { flex: 1, minHeight: 96, maxHeight: 9999 },
   messagesContent: { padding: spacing.md },
   tip: {
     borderLeftWidth: 3,
@@ -656,24 +559,6 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     fontSize: 14,
     color: colors.text,
-  },
-  voiceButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  voiceButtonRecording: { backgroundColor: colors.danger, borderColor: colors.danger },
-  voiceError: {
-    ...typography.caption,
-    color: colors.danger,
-    backgroundColor: colors.surfaceAlt,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
   },
   sendButton: {
     width: 44,

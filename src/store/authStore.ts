@@ -24,7 +24,7 @@ interface AuthState {
  *  - Guest mode backed by MMKV (PRD F-01)
  *  - Splash screen bootstrap restores either session.
  */
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   status: 'loading',
   user: null,
   isGuest: false,

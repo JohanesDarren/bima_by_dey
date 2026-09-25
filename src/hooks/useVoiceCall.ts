@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
-import { streamKroomboxChat } from '../services/kroombox';
-import {
-  compactAssistantAnswer,
-  COMPACT_RAG_STANDARD,
-  limitSentences,
-} from '../utils/assistantText';
+import { serverFailureText, streamKroomboxChat, type HistoryEntry } from '../services/kroombox';
+import { VOICE_MAX_WORDS, cleanAssistantText } from '../utils/assistantText';
+import { VOICE_HISTORY_LIMIT, VOICE_PERSONA, VOICE_RULES } from '../utils/chefPrompt';
 import type { Segment } from '../types';
 import type {
   ExpoSpeechRecognitionErrorEvent,
@@ -18,7 +15,12 @@ type ActiveStream = { close: () => void };
 
 export type VoiceCallState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
-export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: string) {
+export function useVoiceCall(
+  segment: Segment,
+  recipeName?: string,
+  stepLabel?: string,
+  recipeIngredients?: string,
+) {
   const [state, setState] = useState<VoiceCallState>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -28,16 +30,25 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   const activeRef = useRef(false);
   const processingRef = useRef(false);
   const segmentRef = useRef(segment);
-  const recipeRef = useRef({ recipeName, stepLabel });
+  const recipeRef = useRef({ recipeName, stepLabel, recipeIngredients });
   const listenRef = useRef<() => Promise<void>>(async () => undefined);
+  /** Riwayat percakapan suara (dikirim ke API supaya lanjutan nyambung). */
+  const historyRef = useRef<HistoryEntry[]>([]);
   const voiceRef = useRef<string | undefined>(undefined);
+  /**
+   * Nomor "generasi" panggilan. Setiap panggilan baru / akhir panggilan menaikkannya.
+   * Callback yang tertinggal dari panggilan lama (jawaban TTS selesai, pendengar mikrofon
+   * berakhir) membandingkan nomornya dan berhenti sendiri — dulu callback lama ini masih
+   * menyalakan ulang pendengar sesudah panggilan ditutup, sehingga panggilan "hidup lagi"
+   * sendiri (mikrofon tampak menyala tanpa alasan).
+   */
   const callGenerationRef = useRef(0);
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     segmentRef.current = segment;
-    recipeRef.current = { recipeName, stepLabel };
-  }, [segment, recipeName, stepLabel]);
+    recipeRef.current = { recipeName, stepLabel, recipeIngredients };
+  }, [segment, recipeName, stepLabel, recipeIngredients]);
 
   useEffect(() => {
     Speech.getAvailableVoicesAsync()
@@ -67,23 +78,33 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
     }
   }, []);
 
-  const stopCall = useCallback(async () => {
-    callGenerationRef.current += 1;
-    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-    restartTimerRef.current = null;
-    activeRef.current = false;
-    processingRef.current = false;
-    streamRef.current?.close();
-    streamRef.current = null;
-    setState('idle');
-    Speech.stop();
-    try {
-      moduleRef.current?.abort();
-    } catch {
-      // Recognizer may already be stopped.
-    }
-    cleanupListeners();
-  }, [cleanupListeners]);
+  /**
+   * Akhiri panggilan. `keepHistory` dipakai tombol MATIKAN MIKROFON: mute lalu
+   * nyalakan lagi tidak boleh menghapus memori percakapan. (Dulu pengosongan
+   * riwayat ditaruh langsung di sini tanpa melihat siapa saja yang memanggilnya,
+   * sehingga mute terasa seperti mengulang panggilan dari nol.)
+   */
+  const stopCall = useCallback(
+    async (options?: { keepHistory?: boolean }) => {
+      callGenerationRef.current += 1;
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+      activeRef.current = false;
+      processingRef.current = false;
+      if (!options?.keepHistory) historyRef.current = [];
+      streamRef.current?.close();
+      streamRef.current = null;
+      setState('idle');
+      Speech.stop();
+      try {
+        moduleRef.current?.abort();
+      } catch {
+        // Recognizer may already be stopped.
+      }
+      cleanupListeners();
+    },
+    [cleanupListeners],
+  );
 
   const resumeListening = useCallback(() => {
     processingRef.current = false;
@@ -93,71 +114,74 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   const processUtterance = useCallback(
     (text: string) => {
       if (!activeRef.current) return;
-      const generation = callGenerationRef.current;
       processingRef.current = true;
       setState('thinking');
       setErrorMsg(null);
       let response = '';
-      let settled = false;
-
-      const speakResponse = () => {
-        if (settled || !activeRef.current) return;
-        settled = true;
-        streamRef.current?.close();
-        streamRef.current = null;
-        const spoken = compactAssistantAnswer(response, 2, 35);
-        if (!spoken) {
-          processingRef.current = false;
-          setState('error');
-          setErrorMsg('Jawaban suara belum tersedia. Coba lagi.');
-          return;
-        }
-        setState('speaking');
-        Speech.speak(spoken, {
-          language: 'id-ID',
-          voice: voiceRef.current,
-          rate: 0.94,
-          pitch: 1,
-          onDone: () => {
-            if (generation === callGenerationRef.current) resumeListening();
-          },
-          onError: () => {
-            if (generation === callGenerationRef.current) resumeListening();
-          },
-        });
-      };
 
       streamRef.current = streamKroomboxChat(
         {
           message: [
+            VOICE_PERSONA,
             `Resep: ${recipeRef.current.recipeName || 'belum dipilih'}.`,
             `Langkah aktif: ${recipeRef.current.stepLabel || 'tidak ada'}.`,
+            `Bahan resep ini: ${recipeRef.current.recipeIngredients || 'belum tercatat'}.`,
             `Profil: ${segmentRef.current.ageGroup || 'umum'}, ${segmentRef.current.condition || 'umum'}.`,
+            // Aturan dasar versi upstream apa adanya + tambahan kita, disimpan di
+            // chefPrompt.ts supaya bentuk jawaban Chef dan suara tidak berkelahi.
+            ...VOICE_RULES,
+            // Pertanyaan di ujung (bukan di tengah): aturan yang menumpuk SETELAH
+            // pertanyaan membuat jawaban suara melenceng dari yang ditanya.
             `Pertanyaan: ${text}`,
-            COMPACT_RAG_STANDARD,
-            'Berikan jawaban terpenting pada kalimat pertama. Maksimal 2 kalimat atau 35 kata.',
-            'Tanpa pembuka, pengulangan pertanyaan, daftar, markdown, emoji, simbol dekoratif, atau penutup basa-basi.',
           ].join('\n'),
+          // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
+          history: historyRef.current,
           useRag: true,
           stream: true,
-          maxTokens: 120,
+          // Kuota token keluaran (dipungut dari versi upstream); 150 ≈ 3x batas 25 kata.
+          maxTokens: 150,
         },
         {
           onToken: (token) => {
             response += token;
-            const firstSentence = limitSentences(response, 1);
-            if (firstSentence && limitSentences(response, 2) !== firstSentence) speakResponse();
           },
           onDone: () => {
-            speakResponse();
-          },
-          onError: (error) => {
-            if (settled) return;
-            const partial = compactAssistantAnswer(response, 2, 35);
-            if (partial) {
-              speakResponse();
+            streamRef.current = null;
+            if (!activeRef.current) return;
+            // Server kadang mengirim pesan kegagalannya sendiri sebagai "jawaban"
+            // (mis. "Server AI gagal merespons: Error code: 503 …"). Jangan dibacakan
+            // seolah-olah itu jawaban masakan.
+            const failure = serverFailureText(response);
+            if (failure) {
+              processingRef.current = false;
+              setState('error');
+              setErrorMsg(failure);
               return;
             }
+            const spoken = cleanAssistantText(response, { maxWords: VOICE_MAX_WORDS });
+            if (!spoken) {
+              processingRef.current = false;
+              setState('error');
+              setErrorMsg('Jawaban suara belum tersedia. Coba lagi.');
+              return;
+            }
+            // Simpan giliran ini supaya pertanyaan berikutnya masih nyambung.
+            const turns: HistoryEntry[] = [
+              { role: 'user', content: text },
+              { role: 'assistant', content: response },
+            ];
+            historyRef.current = [...historyRef.current, ...turns].slice(-VOICE_HISTORY_LIMIT);
+            setState('speaking');
+            Speech.speak(spoken, {
+              language: 'id-ID',
+              voice: voiceRef.current,
+              rate: 0.94,
+              pitch: 1,
+              onDone: resumeListening,
+              onError: resumeListening,
+            });
+          },
+          onError: (error) => {
             console.warn('[useVoiceCall] AI stream failed', error);
             streamRef.current = null;
             if (!activeRef.current) return;
@@ -207,6 +231,8 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
         (event: ExpoSpeechRecognitionResultEvent) => {
           if (!activeRef.current) return;
           const text = event.results[0]?.transcript ?? '';
+          // `!processingRef.current`: jangan memproses kalimat yang sama dua kali kalau
+          // hasil final datang beruntun sebelum pengolahan pertama selesai.
           if (event.isFinal && text.trim() && !processingRef.current) {
             processingRef.current = true;
             speechModule.stop();

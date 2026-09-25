@@ -27,9 +27,12 @@ export function ProfileSetupScreen({ navigation }: Props) {
 
   const [fullName, setFullName] = useState(profile?.full_name ?? '');
   const [ageGroup, setAgeGroup] = useState<AgeGroup | null>(profile?.target_age_group ?? null);
-  const [condition, setCondition] = useState<SpecialCondition | null>(
-    profile?.special_condition ?? null,
-  );
+  const [condition, setCondition] = useState<SpecialCondition | null>(() => {
+    // Profil lama bisa berisi kombinasi yang sekarang tidak sah (mis. dari versi
+    // sebelumnya). Jangan diteruskan seolah-olah sah — mulai dari kosong.
+    const saved = profile?.special_condition ?? null;
+    return saved && isConditionAllowed(profile?.target_age_group ?? null, saved) ? saved : null;
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

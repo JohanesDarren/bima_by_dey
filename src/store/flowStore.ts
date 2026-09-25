@@ -70,16 +70,20 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   },
 
   loadRecipe: async (menu, segment) => {
+    // Penjaga balapan: dua menu dibuka cepat → yang menang harus yang terakhir
+    // diminta, bukan yang terakhir selesai (jawaban RAG bisa datang tak berurutan).
     const requestId = ++recipeRequestId;
-    set({ activeRecipe: null, activeMenu: menu, menusError: null });
     try {
       const recipe = await getRecipe(menu.name, segment);
-      if (requestId !== recipeRequestId) return null;
+      if (requestId !== recipeRequestId) return recipe;
       set({ activeRecipe: recipe, activeMenu: menu });
       return recipe;
     } catch (e) {
-      if (requestId !== recipeRequestId) return null;
-      set({ menusError: (e as Error).message });
+      // Pesan kosong dulu membuat layar menampilkan kalimat generik ("Resep RAG
+      // belum tersedia") dan sebab aslinya hilang.
+      const message =
+        (e as Error)?.message?.trim() || 'Koneksi ke layanan resep terputus. Coba lagi.';
+      if (requestId === recipeRequestId) set({ menusError: message });
       return null;
     }
   },

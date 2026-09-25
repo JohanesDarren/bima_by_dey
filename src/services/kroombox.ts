@@ -25,12 +25,12 @@ export interface StreamRequest {
   model?: string | null;
   useRag?: boolean;
   stream?: boolean;
-  /** Batas token keluaran bila backend mendukung (memangkas waktu generasi). */
+  /**
+   * Batas token keluaran (dipungut dari versi upstream). Berguna sebagai jaring terhadap
+   * jawaban yang berlarut-larut: panjang keluaran ≈ lama proses. Nilainya sengaja
+   * longgar — dipasang ketat, JSON resep bisa terpotong dan malah minta ulang.
+   */
   maxTokens?: number;
-}
-
-export interface StreamController {
-  close: () => void;
 }
 
 interface StreamChunk {
@@ -54,39 +54,34 @@ function isDoneLine(raw: string): boolean {
  *
  * Autentikasi via header X-API-Key (bukan bearer).
  */
-export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers): StreamController {
+export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers) {
   const url = `${KROOMBOX_BASE_URL}${KROOMBOX_CHAT_ENDPOINT}`;
-  let es: EventSource;
-  try {
-    es = new EventSource(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': KROOMBOX_API_KEY,
-      },
-      body: JSON.stringify({
-        message: req.message,
-        history: req.history ?? [],
-        model: req.model ?? null,
-        useRag: req.useRag ?? true,
-        stream: req.stream ?? true,
-        ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
-      }),
-      pollingInterval: 0,
-      timeout: 180_000,
-    });
-  } catch (error) {
-    const failure =
-      error instanceof Error ? error : new KroomboxError('Koneksi RAG gagal dimulai.');
-    setTimeout(() => handlers.onError(failure), 0);
-    return { close: () => undefined };
-  }
+  const es = new EventSource(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': KROOMBOX_API_KEY,
+    },
+    body: JSON.stringify({
+      message: req.message,
+      history: req.history ?? [],
+      model: req.model ?? null,
+      useRag: req.useRag ?? true,
+      stream: req.stream ?? true,
+      ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
+    }),
+    pollingInterval: 0,
+  });
+
+  // Satu jalur selesai/gagal saja per permintaan. Tanpa penjaga ini, respons yang tiba
+  // sesudah kita menutup koneksi masih diproses (jawaban bisa dobel), dan "close" yang
+  // datang sesudah [DONE] terbaca sebagai kegagalan palsu.
   let settled = false;
   let receivedDelta = false;
-  const done = (finishReason?: string) => {
+  const done = () => {
     if (settled) return;
     settled = true;
-    handlers.onDone(finishReason);
+    handlers.onDone();
     es.close();
   };
   const fail = (error: Error) => {
@@ -100,6 +95,7 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
     if (settled || !event.data) return;
     const raw = event.data;
 
+    // Penanda selesai: data: [DONE]
     if (isDoneLine(raw)) {
       done();
       return;
@@ -109,7 +105,7 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
     try {
       chunk = JSON.parse(raw);
     } catch {
-      return;
+      return; // abaikan noise non-JSON
     }
 
     if (chunk.error) {
@@ -123,38 +119,41 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
       return;
     }
 
+    // Fallback: beberapa deploy kirim {"response": ...} sekaligus walau stream=true.
+    // Kalau delta sudah pernah masuk, jangan ditambahkan lagi (dulu teksnya dobel).
     if (chunk.response) {
       if (!receivedDelta) handlers.onToken(chunk.response);
       done();
       return;
     }
 
-    if (chunk.sources && handlers.onSources) handlers.onSources(chunk.sources);
+    if (chunk.sources && handlers.onSources) {
+      handlers.onSources(chunk.sources);
+    }
   });
 
   es.addEventListener('error', (event) => {
-    const status = 'xhrStatus' in event ? event.xhrStatus : 0;
-    const reason =
-      status > 0
+    // react-native-sse tidak selalu menyertakan pesan error yang terbaca; kalau ada
+    // kode status, sebutkan angkanya supaya sebabnya kelihatan.
+    const status = 'xhrStatus' in event ? (event as { xhrStatus?: number }).xhrStatus : 0;
+    const rawReason =
+      status && status > 0
         ? `Layanan RAG sedang bermasalah (HTTP ${status}).`
-        : 'message' in event && typeof event.message === 'string' && event.message
-          ? event.message
+        : 'message' in event && typeof (event as { message?: unknown }).message === 'string'
+          ? ((event as { message: string }).message as string)
           : event.type === 'timeout'
             ? 'Timeout menunggu respons BIMA.'
             : 'Koneksi ke BIMA terputus.';
+    // Pesan bisa KOSONG (server menutup koneksi tanpa keterangan). Dulu pesan kosong
+    // diteruskan apa adanya, sehingga layar kehilangan sebabnya dan menampilkan
+    // kalimat generik — sebab aslinya jadi tak pernah terlihat.
+    const reason =
+      humanizeTransportReason(rawReason.trim()) || 'Koneksi ke layanan RAG terputus. Coba lagi.';
+    // Pertahankan teks parsial (PRD QA scenario 1) + surface error state.
     fail(new KroomboxError(reason));
   });
 
-  es.addEventListener('close', () => {
-    fail(new KroomboxError('Koneksi RAG ditutup sebelum jawaban selesai. Coba lagi.'));
-  });
-
-  return {
-    close: () => {
-      settled = true;
-      es.close();
-    },
-  };
+  return es;
 }
 
 /** Klasifikasi error sederhana untuk chat store. */
@@ -165,12 +164,115 @@ export class KroomboxError extends Error {
   }
 }
 
+/**
+ * Kegagalan yang datang dari SISI SERVER: model AI milik server sendiri tumbang.
+ *
+ * Terverifikasi langsung dari stream (dicatat 2026-09-22): server mengirim
+ *   {"delta": "Server AI gagal merespons: Error code: 503 - {'error': {'message':
+ *   '[commandcode/xiaomi/mimo-v2.6-flash] [502]: fetch failed (cause: ETIMEDOUT)'}}"}
+ * lalu langsung [DONE]. Mengulang permintaan saat ini tidak menolong dan hanya
+ * membuat pengguna menunggu percobaan kedua yang juga gagal.
+ */
+export class ServerSideError extends KroomboxError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ServerSideError';
+  }
+}
+
+const SERVER_FAILURE =
+  /(Server AI gagal merespons|Error code:\s*5\d\d|fetch failed|ETIMEDOUT|\b50[234]\b|timed out)/i;
+
+/**
+ * Mesin JS/HTTP kadang memberi pesan teknis berbahasa Inggris ("fetch failed",
+ * "terminated", "ECONNRESET"). Bagi pengguna itu tidak berarti apa-apa — ganti dengan
+ * kalimat Indonesia yang sama artinya. Pesan yang sudah berbahasa Indonesia dibiarkan.
+ */
+function humanizeTransportReason(reason: string): string {
+  if (/menunggu respons BIMA|BIMA terputus|layanan RAG/i.test(reason)) return reason;
+  if (
+    /fetch failed|terminated|socket|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|timed out|timeout/i.test(
+      reason,
+    )
+  ) {
+    return 'Koneksi ke layanan RAG terputus di tengah jalan. Coba lagi.';
+  }
+  return reason;
+}
+
+/**
+ * Kalau balasan server sebenarnya pesan kegagalan modelnya sendiri, kembalikan kalimat
+ * yang bisa ditampilkan ke pengguna (dengan kode kesalahan). Selain itu null.
+ */
+export function serverFailureText(raw: string): string | null {
+  if (!SERVER_FAILURE.test(raw)) return null;
+  const code = raw.match(/\b(50[234])\b/)?.[1];
+  return code
+    ? `Server AI gagal merespons (kode ${code} dari model di sisi server). Coba lagi beberapa menit lagi.`
+    : 'Server AI gagal merespons. Coba lagi beberapa menit lagi.';
+}
+
 // ---------------------------------------------------------------------------
 // Non-streaming call (untuk data terstruktur: menu, resep, dsb)
 // ---------------------------------------------------------------------------
 
 export interface ChatResponse {
   response: string;
+}
+
+/**
+ * Potongan JSON pertama yang SUDAH utuh di dalam teks (kurung seimbang, sadar
+ * string), atau null bila belum lengkap.
+ *
+ * Dipakai untuk berhenti lebih awal. Server sering terus menulis prosa setelah
+ * JSON-nya selesai (analisis harga per kg, alergen, "Catatan Verifikasi … skor
+ * kelayakan") selama puluhan detik. Dulu kita menunggu sampai server bilang
+ * selesai: hasilnya lambat, dan permintaan yang lewat batas waktu dibunuh
+ * padahal datanya sudah lengkap. Potongan ini baru dianggap utuh bila benar-benar
+ * bisa diparse, jadi tidak ada risiko memotong data separuh.
+ */
+function completeJsonSlice(text: string): string | null {
+  const first = [text.indexOf('{'), text.indexOf('[')]
+    .filter((index) => index !== -1)
+    .sort((a, b) => a - b)[0];
+  if (first === undefined) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = first; i < text.length; i += 1) {
+    const char = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === '{' || char === '[') depth += 1;
+    else if (char === '}' || char === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        // Model kadang menulis beberapa array terpisah; jangan berhenti kalau
+        // masih ada array berikutnya (hasilnya nanti cuma sebagian).
+        if (
+          text
+            .slice(i + 1)
+            .trimStart()
+            .startsWith('[')
+        )
+          return null;
+        const slice = text.slice(first, i + 1);
+        try {
+          JSON.parse(slice);
+          return slice;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -193,7 +295,9 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
     const timeout = setTimeout(
       () =>
         finish(() => reject(new KroomboxError('Layanan RAG terlalu lama merespons. Coba lagi.'))),
-      180_000,
+      // 240s (dulu 180s): permintaan resep terukur pernah butuh 195-224 detik, jadi
+      // batas 180 detik membunuh permintaan yang datanya sebenarnya sudah jadi.
+      240_000,
     );
 
     try {
@@ -202,6 +306,11 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
         {
           onToken: (token) => {
             text += token;
+            if (settled) return;
+            // Data yang kita butuhkan sudah lengkap → tutup sekarang, jangan tunggu
+            // server selesai menulis prosa tambahan.
+            const ready = completeJsonSlice(text);
+            if (ready) finish(() => resolve(ready));
           },
           onDone: () =>
             finish(() => {
@@ -259,6 +368,17 @@ export async function chatKroombox(req: StreamRequest): Promise<string> {
 }
 
 /**
+ * Beberapa balasan memakai kunci tanpa tanda kutip (mis. `"nutrition": {calories: 480}`)
+ * — itu bukan JSON sah, tapi isinya utuh. Contohnya muncul saat template prompt
+ * menuliskan contoh kunci tanpa kutip dan model menyalinnya apa adanya. Kutip
+ * kuncinya dulu sebelum menyerah: jauh lebih murah daripada mengulang permintaan
+ * yang butuh 1-4 menit.
+ */
+function quoteBareKeys(value: string): string {
+  return value.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
+}
+
+/**
  * Ekstrak JSON array dari respons (strip fence) → T[] | null.
  * Respons menu & pencarian berbentuk array — extractJson (objek) tak cukup.
  */
@@ -270,11 +390,17 @@ export function extractJsonArray<T>(raw: string): T[] | null {
   const start = candidate.indexOf('[');
   const end = candidate.lastIndexOf(']');
   if (start === -1 || end === -1 || end <= start) return null;
+  const slice = candidate.slice(start, end + 1);
   try {
-    const v = JSON.parse(candidate.slice(start, end + 1)) as T[];
+    const v = JSON.parse(slice) as T[];
     return Array.isArray(v) ? v : null;
   } catch {
-    return null;
+    try {
+      const fixed = JSON.parse(quoteBareKeys(slice)) as T[];
+      return Array.isArray(fixed) ? fixed : null;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -292,9 +418,14 @@ export function extractJson<T>(raw: string): T | null {
   const start = candidate.indexOf('{');
   const end = candidate.lastIndexOf('}');
   if (start === -1 || end === -1 || end <= start) return null;
+  const slice = candidate.slice(start, end + 1);
   try {
-    return JSON.parse(candidate.slice(start, end + 1)) as T;
+    return JSON.parse(slice) as T;
   } catch {
-    return null;
+    try {
+      return JSON.parse(quoteBareKeys(slice)) as T;
+    } catch {
+      return null;
+    }
   }
 }
