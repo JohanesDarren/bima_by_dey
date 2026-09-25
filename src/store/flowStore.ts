@@ -23,6 +23,7 @@ interface FlowState {
 
 const DEFAULT_SEGMENT: Segment = { ageGroup: null, condition: null };
 let menuRequestId = 0;
+let recipeRequestId = 0;
 
 /**
  * Store untuk alur discovery-first: menahan segmentasi terpilih, hasil menu
@@ -69,11 +70,15 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   },
 
   loadRecipe: async (menu, segment) => {
+    const requestId = ++recipeRequestId;
+    set({ activeRecipe: null, activeMenu: menu, menusError: null });
     try {
       const recipe = await getRecipe(menu.name, segment);
+      if (requestId !== recipeRequestId) return null;
       set({ activeRecipe: recipe, activeMenu: menu });
       return recipe;
     } catch (e) {
+      if (requestId !== recipeRequestId) return null;
       set({ menusError: (e as Error).message });
       return null;
     }
@@ -83,6 +88,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
 
   reset: () => {
     menuRequestId += 1;
+    recipeRequestId += 1;
     set({
       segment: DEFAULT_SEGMENT,
       category: null,

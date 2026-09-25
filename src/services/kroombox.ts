@@ -25,6 +25,12 @@ export interface StreamRequest {
   model?: string | null;
   useRag?: boolean;
   stream?: boolean;
+  /** Batas token keluaran bila backend mendukung (memangkas waktu generasi). */
+  maxTokens?: number;
+}
+
+export interface StreamController {
+  close: () => void;
 }
 
 interface StreamChunk {
@@ -48,32 +54,54 @@ function isDoneLine(raw: string): boolean {
  *
  * Autentikasi via header X-API-Key (bukan bearer).
  */
-export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers) {
+export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers): StreamController {
   const url = `${KROOMBOX_BASE_URL}${KROOMBOX_CHAT_ENDPOINT}`;
-  const es = new EventSource(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': KROOMBOX_API_KEY,
-    },
-    body: JSON.stringify({
-      message: req.message,
-      history: req.history ?? [],
-      model: req.model ?? null,
-      useRag: req.useRag ?? true,
-      stream: req.stream ?? true,
-    }),
-    pollingInterval: 0,
-  });
+  let es: EventSource;
+  try {
+    es = new EventSource(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': KROOMBOX_API_KEY,
+      },
+      body: JSON.stringify({
+        message: req.message,
+        history: req.history ?? [],
+        model: req.model ?? null,
+        useRag: req.useRag ?? true,
+        stream: req.stream ?? true,
+        ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
+      }),
+      pollingInterval: 0,
+      timeout: 180_000,
+    });
+  } catch (error) {
+    const failure =
+      error instanceof Error ? error : new KroomboxError('Koneksi RAG gagal dimulai.');
+    setTimeout(() => handlers.onError(failure), 0);
+    return { close: () => undefined };
+  }
+  let settled = false;
+  let receivedDelta = false;
+  const done = (finishReason?: string) => {
+    if (settled) return;
+    settled = true;
+    handlers.onDone(finishReason);
+    es.close();
+  };
+  const fail = (error: Error) => {
+    if (settled) return;
+    settled = true;
+    handlers.onError(error);
+    es.close();
+  };
 
   es.addEventListener('message', (event) => {
-    if (!event.data) return;
+    if (settled || !event.data) return;
     const raw = event.data;
 
-    // Penanda selesai: data: [DONE]
     if (isDoneLine(raw)) {
-      handlers.onDone();
-      es.close();
+      done();
       return;
     }
 
@@ -81,51 +109,52 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
     try {
       chunk = JSON.parse(raw);
     } catch {
-      return; // abaikan noise non-JSON
+      return;
     }
 
     if (chunk.error) {
-      handlers.onError(new Error(chunk.error));
-      es.close();
+      fail(new KroomboxError(chunk.error));
       return;
     }
 
     if (chunk.delta) {
+      receivedDelta = true;
       handlers.onToken(chunk.delta);
       return;
     }
 
-    // Fallback: beberapa deploy kirim {"response": ...} sekaligus walau stream=true
     if (chunk.response) {
-      handlers.onToken(chunk.response);
-      handlers.onDone();
-      es.close();
+      if (!receivedDelta) handlers.onToken(chunk.response);
+      done();
       return;
     }
 
-    if (chunk.sources && handlers.onSources) {
-      handlers.onSources(chunk.sources);
-    }
+    if (chunk.sources && handlers.onSources) handlers.onSources(chunk.sources);
   });
 
   es.addEventListener('error', (event) => {
-    // react-native-sse tidak selalu menyertakan pesan error yang terbaca.
+    const status = 'xhrStatus' in event ? event.xhrStatus : 0;
     const reason =
-      'message' in event && typeof (event as { message?: unknown }).message === 'string'
-        ? ((event as { message: string }).message as string)
-        : event.type === 'timeout'
-          ? 'Timeout menunggu respons BIMA.'
-          : 'Koneksi ke BIMA terputus.';
-    // Pertahankan teks parsial (PRD QA scenario 1) + surface error state.
-    handlers.onError(new Error(reason));
-    es.close();
+      status > 0
+        ? `Layanan RAG sedang bermasalah (HTTP ${status}).`
+        : 'message' in event && typeof event.message === 'string' && event.message
+          ? event.message
+          : event.type === 'timeout'
+            ? 'Timeout menunggu respons BIMA.'
+            : 'Koneksi ke BIMA terputus.';
+    fail(new KroomboxError(reason));
   });
 
-  es.addEventListener('open', () => {
-    // Koneksi terbuka — siap menerima delta.
+  es.addEventListener('close', () => {
+    fail(new KroomboxError('Koneksi RAG ditutup sebelum jawaban selesai. Coba lagi.'));
   });
 
-  return es;
+  return {
+    close: () => {
+      settled = true;
+      es.close();
+    },
+  };
 }
 
 /** Klasifikasi error sederhana untuk chat store. */
@@ -214,6 +243,7 @@ export async function chatKroombox(req: StreamRequest): Promise<string> {
         model: req.model ?? null,
         useRag: req.useRag ?? true,
         stream: false,
+        ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
       }),
     });
     if (!res.ok) throw new KroomboxError(`Layanan RAG sedang bermasalah (HTTP ${res.status}).`);

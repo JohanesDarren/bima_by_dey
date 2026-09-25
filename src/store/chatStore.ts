@@ -3,7 +3,11 @@ import { supabase } from '../lib/supabase';
 import { localStore } from '../lib/storage';
 import { streamKroomboxChat } from '../services/kroombox';
 import { buildSessionTitle, buildSystemPrompt } from '../utils/promptBuilder';
-import { COMPACT_RAG_STANDARD, limitSentences } from '../utils/assistantText';
+import {
+  cleanAssistantText,
+  compactAssistantAnswer,
+  COMPACT_RAG_STANDARD,
+} from '../utils/assistantText';
 import type { ChatMessage, Profile } from '../types';
 
 type StreamStatus = 'idle' | 'streaming' | 'done' | 'error';
@@ -13,8 +17,17 @@ function loadGuestHistory(): ChatMessage[] {
   const raw = localStore.getGuestHistory();
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw) as ChatMessage[];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (value): value is ChatMessage =>
+            Boolean(value) &&
+            typeof value === 'object' &&
+            ((value as ChatMessage).role === 'user' ||
+              (value as ChatMessage).role === 'assistant') &&
+            typeof (value as ChatMessage).content === 'string',
+        )
+      : [];
   } catch {
     return [];
   }
@@ -59,6 +72,7 @@ async function persistMessages(userId: string, sessionId: string, msgs: ChatMess
   await supabase.from('chat_messages').insert(
     msgs
       .filter((m) => m.role !== 'system')
+      .slice(-2)
       .map((m) => ({
         session_id: sessionId,
         role: m.role,
@@ -90,8 +104,11 @@ async function runStream(
   const trimmed = query.trim();
   if (!trimmed || get().isStreaming) return;
 
-  const hasPriorUserMessage = get().messages.some((m) => m.role === 'user');
-  const base = hasPriorUserMessage ? [] : [welcomeMessage()];
+  const prior = get().messages.filter(
+    (message) =>
+      message.role === 'user' || (message.role === 'assistant' && message.content.trim()),
+  );
+  const base = prior.length > 0 ? prior : [welcomeMessage()];
   const userMsg: ChatMessage = { role: 'user', content: trimmed, reasoning_content: null };
   const assistantMsg: ChatMessage = { role: 'assistant', content: '', reasoning_content: null };
   const messages = [...base, userMsg, assistantMsg];
@@ -106,28 +123,35 @@ async function runStream(
   // Injeksi demografi (PRD F-03) — API BIMA tidak punya field "system",
   // jadi parameter digabung ke pesan user.
   const systemHint = profile ? `${buildSystemPrompt(profile)}\n\n` : '';
-  const userPrompt = `${systemHint}${COMPACT_RAG_STANDARD}\nJawab maksimal 5 kalimat. Berikan inti jawaban pada kalimat pertama.\n\nPertanyaan pengguna: ${trimmed}`;
-  const history = messages
+  const userPrompt = `${systemHint}${COMPACT_RAG_STANDARD}\nJawab maksimal 5 kalimat atau 80 kata. Berikan inti jawaban pada kalimat pertama.\n\nPertanyaan pengguna: ${trimmed}`;
+  const history = base
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .filter((m) => m.content.trim().length > 0)
+    .slice(-12)
     .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-  // Buat session (khusus auth; guest murni lokal).
-  let sessionId = get().currentSessionId;
-  if (!sessionId && !isGuest && userId) {
-    const title = buildSessionTitle(trimmed);
-    const { data } = await supabase
-      .from('chat_sessions')
-      .insert({ user_id: userId, title })
-      .select('id')
-      .single();
-    sessionId = data?.id ?? null;
-    set({ currentSessionId: sessionId });
-  }
+  // Penyimpanan tidak boleh menunda jawaban RAG.
+  const currentSessionId = get().currentSessionId;
+  const sessionPromise: Promise<string | null> =
+    currentSessionId || isGuest || !userId
+      ? Promise.resolve(currentSessionId)
+      : Promise.resolve(
+          supabase
+            .from('chat_sessions')
+            .insert({ user_id: userId, title: buildSessionTitle(trimmed) })
+            .select('id')
+            .single(),
+        )
+          .then(({ data }) => {
+            const id = data?.id ?? null;
+            if (id) set({ currentSessionId: id });
+            return id;
+          })
+          .catch(() => null);
 
   let assistantText = '';
   const stream = streamKroomboxChat(
-    { message: userPrompt, history, stream: true, useRag: true },
+    { message: userPrompt, history, stream: true, useRag: true, maxTokens: 250 },
     {
       onToken: (delta) => {
         assistantText += delta;
@@ -136,7 +160,7 @@ async function runStream(
         if (last?.role === 'assistant') {
           const updated = [
             ...cur.slice(0, -1),
-            { ...last, content: limitSentences(assistantText, 5) },
+            { ...last, content: cleanAssistantText(assistantText) },
           ];
           set({ messages: updated });
         }
@@ -144,22 +168,42 @@ async function runStream(
       onDone: async () => {
         const current = get().messages;
         const last = current[current.length - 1];
-        const clean = limitSentences(assistantText, 5);
+        const clean = compactAssistantAnswer(assistantText, 5, 80);
+        if (!clean) {
+          set({
+            isStreaming: false,
+            streamStatus: 'error',
+            streamError: 'RAG belum memberikan jawaban. Coba lagi.',
+            activeStream: null,
+          });
+          return;
+        }
         const cur =
           last?.role === 'assistant'
             ? [...current.slice(0, -1), { ...last, content: clean }]
             : current;
         set({ messages: cur });
-        if (!isGuest && userId && sessionId) {
-          await persistMessages(userId, sessionId, cur);
+        set({ isStreaming: false, streamStatus: 'done', activeStream: null });
+        if (!isGuest && userId) {
+          sessionPromise.then((sessionId) => {
+            if (sessionId) persistMessages(userId, sessionId, cur).catch(() => undefined);
+          });
         } else if (isGuest) {
           saveGuestHistory(cur);
         }
-        set({ isStreaming: false, streamStatus: 'done', activeStream: null });
       },
       onError: (err) => {
-        // Pertahankan teks parsial (PRD QA scenario 1) + surface error state.
+        const current = get().messages;
+        const last = current[current.length - 1];
+        const partial = last?.role === 'assistant' ? cleanAssistantText(last.content) : '';
         set({
+          messages:
+            partial && last?.role === 'assistant'
+              ? [
+                  ...current.slice(0, -1),
+                  { ...last, content: `Jawaban terputus dan mungkin belum lengkap: ${partial}` },
+                ]
+              : current,
           isStreaming: false,
           streamStatus: 'error',
           streamError: err.message,
@@ -194,11 +238,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   retryLast: (profile, userId, isGuest) => {
     const query = get().lastUserQuery;
     if (!query) return Promise.resolve();
-    // Buang bubble asisten yang gagal/kosong di akhir sebelum kirim ulang.
+    // Ganti turn gagal; jangan kirim pertanyaan yang sama dua kali dalam history.
     const { messages: cur } = get();
-    const last = cur[cur.length - 1];
+    const withoutAssistant = cur[cur.length - 1]?.role === 'assistant' ? cur.slice(0, -1) : cur;
     const pruned =
-      last?.role === 'assistant' && last.content.trim().length === 0 ? cur.slice(0, -1) : cur;
+      withoutAssistant[withoutAssistant.length - 1]?.role === 'user' &&
+      withoutAssistant[withoutAssistant.length - 1]?.content.trim() === query.trim()
+        ? withoutAssistant.slice(0, -1)
+        : withoutAssistant;
     set({ messages: pruned });
     return runStream(set, get, query, profile, userId, isGuest);
   },

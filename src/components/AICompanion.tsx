@@ -14,7 +14,11 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/kroombox';
-import { COMPACT_RAG_STANDARD, limitSentences } from '../utils/assistantText';
+import {
+  cleanAssistantText,
+  compactAssistantAnswer,
+  COMPACT_RAG_STANDARD,
+} from '../utils/assistantText';
 import type {
   ExpoSpeechRecognitionErrorEvent,
   ExpoSpeechRecognitionResultEvent,
@@ -108,6 +112,13 @@ export function AICompanion({
       if (!text || streaming) return;
       setLastQuestion(text);
       setInput('');
+      const history = messages
+        .filter((message) => message.content.trim())
+        .slice(-10)
+        .map((message) => ({
+          role: message.role as 'user' | 'assistant',
+          content: message.content,
+        }));
       setMessages((current) => [
         ...current,
         { role: 'user', content: text, reasoning_content: null },
@@ -122,17 +133,19 @@ export function AICompanion({
             context,
             `Pertanyaan pengguna: ${text}`,
             COMPACT_RAG_STANDARD,
-            'Berikan jawaban inti pada kalimat pertama. Maksimal 5 kalimat ringkas, lengkap, dan relevan.',
+            'Berikan jawaban inti pada kalimat pertama. Maksimal 5 kalimat atau 80 kata, ringkas, lengkap, dan relevan.',
             'Gunakan paragraf biasa. Jangan gunakan emoji, logo, emblem, ikon, markdown, heading, atau simbol dekoratif.',
             'Hindari pembuka, pengulangan pertanyaan, dan penutup basa-basi yang tidak perlu.',
           ].join('\n\n'),
           useRag: true,
           stream: true,
+          maxTokens: 250,
+          history,
         },
         {
           onToken: (delta) => {
             assistantText += delta;
-            const clean = limitSentences(assistantText, 5);
+            const clean = cleanAssistantText(assistantText);
             setMessages((current) => {
               const next = [...current];
               const last = next[next.length - 1];
@@ -145,12 +158,27 @@ export function AICompanion({
           onDone: () => {
             setStreaming(false);
             streamRef.current = null;
+            const clean = compactAssistantAnswer(assistantText, 5, 80);
+            if (!clean) {
+              setMessages((current) => {
+                const next = [...current];
+                if (next[next.length - 1]?.role === 'assistant') next.pop();
+                return [
+                  ...next,
+                  {
+                    role: 'assistant',
+                    content: 'RAG belum memberikan jawaban. Coba lagi.',
+                    reasoning_content: null,
+                  },
+                ];
+              });
+              return;
+            }
+            if (autoSpeak) speak(clean);
+            onAssistantMessage?.(clean);
             setMessages((current) => {
               const last = current[current.length - 1];
               if (last?.role === 'assistant' && last.content) {
-                const clean = limitSentences(assistantText, 5);
-                if (autoSpeak) speak(clean);
-                onAssistantMessage?.(clean);
                 return [...current.slice(0, -1), { ...last, content: clean }];
               }
               return current;
@@ -162,12 +190,15 @@ export function AICompanion({
             setMessages((current) => {
               const next = [...current];
               const last = next[next.length - 1];
-              if (last?.role === 'assistant' && !last.content) next.pop();
+              const partial = last?.role === 'assistant' ? cleanAssistantText(last.content) : '';
+              if (last?.role === 'assistant') next.pop();
               return [
                 ...next,
                 {
                   role: 'assistant',
-                  content: 'Koneksi terputus. Coba kirim lagi.',
+                  content: partial
+                    ? `Jawaban terputus dan mungkin belum lengkap: ${partial}`
+                    : 'Koneksi terputus. Coba kirim lagi.',
                   reasoning_content: null,
                 },
               ];
@@ -176,13 +207,17 @@ export function AICompanion({
         },
       );
     },
-    [autoSpeak, context, input, onAssistantMessage, speak, streaming],
+    [autoSpeak, context, input, messages, onAssistantMessage, speak, streaming],
   );
 
   const stop = () => {
     streamRef.current?.close();
     streamRef.current = null;
     setStreaming(false);
+    setMessages((current) => {
+      const last = current[current.length - 1];
+      return last?.role === 'assistant' && !last.content ? current.slice(0, -1) : current;
+    });
   };
 
   const toggleVoiceMessage = useCallback(async () => {

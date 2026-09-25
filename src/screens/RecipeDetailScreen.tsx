@@ -28,22 +28,31 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
     Boolean(menu && (!activeRecipe || activeRecipe.name !== menu.name)),
   );
   const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const recipe = activeRecipe;
 
   useEffect(() => {
     // Dari Browse: menu diberikan → ambil resep (bila belum cocok dgn aktif).
     if (!menu) return;
+    let cancelled = false;
     if (!recipe || recipe.name !== menu.name) {
       setLoading(true);
       setError(null);
       loadRecipe(menu, segment)
         .then((loaded) => {
-          if (!loaded) setError(useFlowStore.getState().menusError || 'Resep RAG belum tersedia.');
+          if (!cancelled && !loaded) {
+            setError(useFlowStore.getState().menusError || 'Resep RAG belum tersedia.');
+          }
         })
-        .finally(() => setLoading(false));
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
     }
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu?.name]);
+  }, [menu?.name, retryKey]);
 
   // Tidak ada menu & tidak ada resep aktif (mis. deep-link rusak) → fallback.
   if (!menu && !recipe) {
@@ -77,6 +86,14 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
           <Text style={styles.centerText}>
             Jawaban hanya ditampilkan ketika layanan RAG tersedia.
           </Text>
+          <Button
+            title="Coba lagi"
+            onPress={() => {
+              setError(null);
+              setRetryKey((value) => value + 1);
+            }}
+            style={styles.retry}
+          />
         </View>
       ) : displayRecipe ? (
         <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
@@ -189,5 +206,6 @@ const styles = StyleSheet.create({
   stepTimer: { color: colors.primary, fontWeight: '600' },
   stepInstr: { ...typography.bodySm, color: colors.textMuted, marginTop: 2 },
   cta: { marginTop: spacing.lg },
+  retry: { marginTop: spacing.lg, alignSelf: 'stretch' },
   muted: { color: colors.textMuted },
 });

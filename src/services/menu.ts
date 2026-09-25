@@ -2,7 +2,8 @@ import { chatKroombox, extractJson, extractJsonArray } from './kroombox';
 import type { FoodCategory, MenuItem, Recipe, RecipeRequest, Segment } from '../types';
 import { isConditionAllowed } from '../constants';
 import { menuKey } from '../utils/menuKey';
-import { cleanAssistantText, COMPACT_RAG_STANDARD, limitSentences } from '../utils/assistantText';
+import { COMPACT_RAG_STANDARD, limitSentences } from '../utils/assistantText';
+import { normalizeRecipeResponse } from './recipeNormalizer';
 
 const CATEGORY_LABEL: Record<FoodCategory, string> = {
   main_course: 'main course (makanan utama)',
@@ -23,6 +24,9 @@ function normalizeCategory(raw: string | undefined | null): FoodCategory {
     soup: 'soup',
     sop: 'soup',
     kuah: 'soup',
+    minuman: 'beverage',
+    beverage: 'beverage',
+    drink: 'beverage',
     dessert: 'dessert',
     penutup: 'dessert',
     manis: 'dessert',
@@ -31,9 +35,6 @@ function normalizeCategory(raw: string | undefined | null): FoodCategory {
     kue: 'snack',
     cookies: 'snack',
     bubur: 'soup',
-    minuman: 'beverage',
-    beverage: 'beverage',
-    drink: 'beverage',
   };
   for (const [k, v] of Object.entries(kw)) {
     if (s.includes(k)) return v;
@@ -43,10 +44,18 @@ function normalizeCategory(raw: string | undefined | null): FoodCategory {
 
 /** Bersihkan/resapi item menu mentah dari LLM ke MenuItem yang aman. */
 function normalizeMenu(item: Partial<MenuItem>): MenuItem {
+  const nutrition =
+    item.nutrition && typeof item.nutrition === 'object' && !Array.isArray(item.nutrition)
+      ? Object.fromEntries(
+          Object.entries(item.nutrition)
+            .slice(0, 6)
+            .map(([key, value]) => [key, limitSentences(String(value), 1)]),
+        )
+      : {};
   return {
     name: item.name ?? '(tanpa nama)',
     description: limitSentences(item.description ?? '', 1),
-    nutrition: item.nutrition && typeof item.nutrition === 'object' ? item.nutrition : {},
+    nutrition,
     strengths: Array.isArray(item.strengths)
       ? item.strengths.slice(0, 2).map((value) => limitSentences(String(value), 1))
       : [],
@@ -74,6 +83,14 @@ function validateSegment(seg: Segment): void {
   if (!isConditionAllowed(seg.ageGroup, seg.condition)) {
     throw new Error('Kombinasi kelompok umur dan kondisi khusus tidak valid.');
   }
+}
+
+function shouldRetryRequest(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  const match = error.message.match(/HTTP (\d{3})/);
+  if (!match) return true;
+  const status = Number(match[1]);
+  return status === 408 || status === 429 || status >= 500;
 }
 
 function promptRecipe(menuName: string, seg: Segment): string {
@@ -124,40 +141,15 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
         message: promptRecipe(menuName, seg),
         useRag: true,
         stream: true,
+        maxTokens: 900,
       });
       if (!r.trim() || /tidak ada teks|maaf/i.test(r.slice(0, 120))) continue;
-      const parsed = extractJson<Recipe>(r);
-      if (
-        parsed &&
-        typeof parsed.name === 'string' &&
-        Number.isFinite(parsed.servings) &&
-        Number.isFinite(parsed.totalMinutes) &&
-        Array.isArray(parsed.ingredients) &&
-        parsed.ingredients.length > 0 &&
-        Array.isArray(parsed.steps) &&
-        parsed.steps.length >= 4 &&
-        parsed.steps.length <= 7 &&
-        parsed.steps.every(
-          (step) =>
-            Number.isFinite(step.order) &&
-            Boolean(cleanAssistantText(step.title)) &&
-            Boolean(cleanAssistantText(step.instruction)),
-        )
-      ) {
-        return {
-          ...parsed,
-          name: cleanAssistantText(parsed.name),
-          ingredients: parsed.ingredients.map((value) => cleanAssistantText(String(value))),
-          steps: parsed.steps.map((step, index) => ({
-            ...step,
-            order: index + 1,
-            title: limitSentences(step.title, 1),
-            instruction: limitSentences(step.instruction, 2),
-          })),
-        };
-      }
+      const parsed = extractJson<unknown>(r);
+      const recipe = normalizeRecipeResponse(parsed, menuName);
+      if (recipe) return recipe;
     } catch (error) {
       lastError = error;
+      if (!shouldRetryRequest(error)) throw error;
     }
   }
   if (lastError instanceof Error) throw lastError;
@@ -176,6 +168,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const raw = await chatKroombox({
+        maxTokens: 900,
         message: promptSearchRecipe(req.segment, req.category, [
           ...(req.excludedNames ?? []),
           ...[...collected.values()].map((menu) => menu.name),
@@ -188,13 +181,14 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
       if (!parsed) continue;
       for (const menu of normMenu(parsed)) {
         const key = menuKey(menu.name);
-        if (!excluded.has(key) && !collected.has(key)) {
-          collected.set(key, { ...menu, category: req.category });
+        if (menu.category === req.category && !excluded.has(key) && !collected.has(key)) {
+          collected.set(key, menu);
         }
         if (collected.size === 3) return [...collected.values()];
       }
     } catch (error) {
       lastError = error;
+      if (!shouldRetryRequest(error)) throw error;
     }
   }
   if (lastError instanceof Error && collected.size === 0) throw lastError;

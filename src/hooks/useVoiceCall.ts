@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
 import { streamKroomboxChat } from '../services/kroombox';
-import { COMPACT_RAG_STANDARD, limitSentences } from '../utils/assistantText';
+import {
+  compactAssistantAnswer,
+  COMPACT_RAG_STANDARD,
+  limitSentences,
+} from '../utils/assistantText';
 import type { Segment } from '../types';
 import type {
   ExpoSpeechRecognitionErrorEvent,
@@ -27,6 +31,8 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   const recipeRef = useRef({ recipeName, stepLabel });
   const listenRef = useRef<() => Promise<void>>(async () => undefined);
   const voiceRef = useRef<string | undefined>(undefined);
+  const callGenerationRef = useRef(0);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     segmentRef.current = segment;
@@ -62,6 +68,9 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   }, []);
 
   const stopCall = useCallback(async () => {
+    callGenerationRef.current += 1;
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    restartTimerRef.current = null;
     activeRef.current = false;
     processingRef.current = false;
     streamRef.current?.close();
@@ -84,6 +93,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   const processUtterance = useCallback(
     (text: string) => {
       if (!activeRef.current) return;
+      const generation = callGenerationRef.current;
       processingRef.current = true;
       setState('thinking');
       setErrorMsg(null);
@@ -95,7 +105,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
         settled = true;
         streamRef.current?.close();
         streamRef.current = null;
-        const spoken = limitSentences(response, 2);
+        const spoken = compactAssistantAnswer(response, 2, 35);
         if (!spoken) {
           processingRef.current = false;
           setState('error');
@@ -108,8 +118,12 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
           voice: voiceRef.current,
           rate: 0.94,
           pitch: 1,
-          onDone: resumeListening,
-          onError: resumeListening,
+          onDone: () => {
+            if (generation === callGenerationRef.current) resumeListening();
+          },
+          onError: () => {
+            if (generation === callGenerationRef.current) resumeListening();
+          },
         });
       };
 
@@ -121,23 +135,29 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
             `Profil: ${segmentRef.current.ageGroup || 'umum'}, ${segmentRef.current.condition || 'umum'}.`,
             `Pertanyaan: ${text}`,
             COMPACT_RAG_STANDARD,
-            'Berikan jawaban terpenting pada kalimat pertama. Maksimal 2 kalimat pendek.',
+            'Berikan jawaban terpenting pada kalimat pertama. Maksimal 2 kalimat atau 35 kata.',
             'Tanpa pembuka, pengulangan pertanyaan, daftar, markdown, emoji, simbol dekoratif, atau penutup basa-basi.',
           ].join('\n'),
           useRag: true,
           stream: true,
+          maxTokens: 120,
         },
         {
           onToken: (token) => {
             response += token;
-            const completedSentences = response.match(/[.!?](?:\s|$)/g)?.length ?? 0;
-            if (completedSentences >= 2) speakResponse();
+            const firstSentence = limitSentences(response, 1);
+            if (firstSentence && limitSentences(response, 2) !== firstSentence) speakResponse();
           },
           onDone: () => {
             speakResponse();
           },
           onError: (error) => {
             if (settled) return;
+            const partial = compactAssistantAnswer(response, 2, 35);
+            if (partial) {
+              speakResponse();
+              return;
+            }
             console.warn('[useVoiceCall] AI stream failed', error);
             streamRef.current = null;
             if (!activeRef.current) return;
@@ -187,7 +207,7 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
         (event: ExpoSpeechRecognitionResultEvent) => {
           if (!activeRef.current) return;
           const text = event.results[0]?.transcript ?? '';
-          if (event.isFinal && text.trim()) {
+          if (event.isFinal && text.trim() && !processingRef.current) {
             processingRef.current = true;
             speechModule.stop();
             processUtterance(text.trim());
@@ -204,8 +224,14 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
         },
       );
       const endSubscription = speechModule.addListener('end', () => {
-        setTimeout(() => {
-          if (activeRef.current && !processingRef.current) {
+        const generation = callGenerationRef.current;
+        restartTimerRef.current = setTimeout(() => {
+          restartTimerRef.current = null;
+          if (
+            generation === callGenerationRef.current &&
+            activeRef.current &&
+            !processingRef.current
+          ) {
             listenRef.current().catch(() => undefined);
           }
         }, 500);
@@ -225,6 +251,9 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   }, [startListening]);
 
   const startCall = useCallback(async () => {
+    callGenerationRef.current += 1;
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    restartTimerRef.current = null;
     activeRef.current = true;
     await startListening();
   }, [startListening]);
@@ -232,6 +261,8 @@ export function useVoiceCall(segment: Segment, recipeName?: string, stepLabel?: 
   useEffect(
     () => () => {
       activeRef.current = false;
+      callGenerationRef.current += 1;
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       processingRef.current = false;
       streamRef.current?.close();
       Speech.stop();
