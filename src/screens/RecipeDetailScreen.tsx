@@ -1,93 +1,66 @@
 import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
 import { Container } from '../components/Container';
+import { ChefLoader } from '../components/ChefLoader';
 import { useFlowStore } from '../store/flowStore';
-import { colors, radius, spacing, typography } from '../theme';
+import { useLoadingNarration } from '../hooks/useLoadingNarration';
 import { menuKey } from '../utils/menuKey';
-import { cleanFoodText } from '../utils/cleanText';
-import type { Recipe } from '../types';
+import { colors, radius, spacing, typography } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RecipeDetail'>;
-
-/**
- * Resep dianggap cocok dengan menu yang dibuka bila KUNCINYA sama — spasi, tanda
- * baca, dan besar-kecil huruf diabaikan (utils/menuKey.ts).
- *
- * Kenapa tidak membandingkan nama secara persis: nama pada jawaban AI bisa
- * berbeda tipis dari nama menu (tambah kata, tanda hubung, spasi ganda). Dulu itu
- * membuat resep yang SUDAH berhasil dimuat dibuang, dan layar menampilkan
- * "Resep RAG belum tersedia." tanpa sebab yang jelas.
- */
-function sameMenu(a: string | null | undefined, b: string | null | undefined): boolean {
-  if (!a || !b) return false;
-  return menuKey(a) === menuKey(b);
-}
 
 /** Detail resep lengkap: bahan + langkah + mulai masak (alur step-by-step). */
 export function RecipeDetailScreen({ navigation, route }: Props) {
   const { menu } = route.params ?? {};
   const segment = useFlowStore((s) => s.segment);
   const activeRecipe = useFlowStore((s) => s.activeRecipe);
-  const activeMenu = useFlowStore((s) => s.activeMenu);
   const loadRecipe = useFlowStore((s) => s.loadRecipe);
+  // Resep yang sudah di-prefetch saat 3 menu dibuat → tampil tanpa layar muat.
+  const cachedRecipe = useFlowStore((s) => (menu ? s.recipeCache[menuKey(menu.name)] : undefined));
 
-  /**
-   * Resep yang BARU SAJA dimuat untuk menu ini. Ditampilkan langsung tanpa
-   * membandingkan nama: nama resep dari AI sering menambah/mengurangi kata dari
-   * nama menu ("Bubur Sorgum Ayam" vs "Bubur Sorgum Ayam Sayur"), dan dulu
-   * perbandingan nama itu membuang resep yang sudah berhasil dimuat — layar
-   * menampilkan "Resep RAG belum tersedia" padahal datanya ada.
-   */
-  const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null);
-  /** Resep di store memang milik menu ini, diketahui dari menu yang diminta. */
-  const storeRecipeIsThisMenu = Boolean(menu && activeMenu && sameMenu(activeMenu.name, menu.name));
-  const [loading, setLoading] = useState(() => Boolean(menu && !storeRecipeIsThisMenu));
+  const [loading, setLoading] = useState(() =>
+    Boolean(menu && !cachedRecipe && (!activeRecipe || activeRecipe.name !== menu.name)),
+  );
   const [error, setError] = useState<string | null>(null);
-  /** Dinaikkan saat pengguna menekan "Coba lagi" → memicu pengambilan ulang. */
   const [retryKey, setRetryKey] = useState(0);
   const recipe = activeRecipe;
+  const narration = useLoadingNarration('detail', loading);
 
   useEffect(() => {
-    // Dari Browse: menu diberikan → ambil resep (bila store belum punya resep menu ini).
+    // Dari Browse: menu diberikan → pakai resep prefetch bila ada, jika tidak
+    // baru ambil on-demand (deep-link / prefetch yang gagal).
     if (!menu) return;
-    // Penjaga: hasil permintaan yang sudah tidak relevan (pengguna pindah menu atau
-    // menekan "Coba lagi") tidak boleh lagi menimpa layar.
-    let cancelled = false;
-    if (!storeRecipeIsThisMenu || retryKey > 0) {
-      setLoading(true);
+    if (cachedRecipe) {
+      loadRecipe(menu, segment);
       setError(null);
-      loadRecipe(menu, segment)
-        .then((loaded) => {
-          if (cancelled) return;
-          if (loaded) {
-            setLoadedRecipe(loaded);
-            return;
-          }
-          setError(
-            useFlowStore.getState().menusError ||
-              'Layanan resep tidak merespons. Coba lagi sebentar lagi.',
-          );
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
+      setLoading(false);
+      return;
     }
+    if (recipe && recipe.name === menu.name) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    loadRecipe(menu, segment)
+      .then((loaded) => {
+        if (!cancelled && !loaded) {
+          setError(useFlowStore.getState().menusError || 'Resep RAG belum tersedia.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu?.name, retryKey]);
+  }, [menu?.name, retryKey, cachedRecipe]);
 
   // Tidak ada menu & tidak ada resep aktif (mis. deep-link rusak) → fallback.
   if (!menu && !recipe) {
@@ -98,7 +71,9 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const displayRecipe = menu ? (loadedRecipe ?? (storeRecipeIsThisMenu ? recipe : null)) : recipe;
+  const displayRecipe = menu
+    ? (cachedRecipe ?? (recipe?.name === menu.name ? recipe : null))
+    : recipe;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -111,9 +86,10 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
       </View>
 
       {loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.centerText}>Menyusun resep langkah demi langkah…</Text>
+        <View style={styles.centerBox} accessibilityLiveRegion="polite">
+          <ChefLoader size={112} accessibilityLabel="Menyiapkan resep" />
+          <Text style={styles.narration}>{narration}</Text>
+          <Text style={styles.centerText}>Menyiapkan resep…</Text>
         </View>
       ) : error ? (
         <View style={styles.centerBox}>
@@ -134,17 +110,10 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
         <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
           <Container>
             <Text style={styles.title}>{displayRecipe.name}</Text>
-            <View style={styles.metaRow}>
-              <View style={styles.metaChip}>
-                <Text style={styles.metaText}>🍽 {displayRecipe.servings} porsi</Text>
-              </View>
-              <View style={styles.metaChip}>
-                <Text style={styles.metaText}>⏱ ±{displayRecipe.totalMinutes} menit</Text>
-              </View>
-              <View style={styles.metaChip}>
-                <Text style={styles.metaText}>📋 {displayRecipe.steps.length} langkah</Text>
-              </View>
-            </View>
+            <Text style={styles.metaText}>
+              {displayRecipe.servings} porsi · ±{displayRecipe.totalMinutes} menit ·{' '}
+              {displayRecipe.steps.length} langkah
+            </Text>
 
             <Text style={styles.sectionTitle}>Bahan-bahan</Text>
             <View style={styles.card}>
@@ -153,8 +122,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
               ) : (
                 displayRecipe.ingredients.map((ing, i) => (
                   <Text key={i} style={styles.ingredient}>
-                    {'• '}
-                    {cleanFoodText(ing, { notes: 'all' })}
+                    {ing}
                   </Text>
                 ))
               )}
@@ -169,12 +137,12 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
                   </View>
                   <View style={styles.stepBody}>
                     <Text style={styles.stepTitle}>
-                      {cleanFoodText(s.title, { maxLength: 60 })}
+                      {s.title}
                       {s.durationMinutes ? (
-                        <Text style={styles.stepTimer}> · ⏱ {s.durationMinutes} menit</Text>
+                        <Text style={styles.stepTimer}> · {s.durationMinutes} menit</Text>
                       ) : null}
                     </Text>
-                    <Text style={styles.stepInstr}>{cleanFoodText(s.instruction)}</Text>
+                    <Text style={styles.stepInstr}>{s.instruction}</Text>
                   </View>
                 </View>
               ))}
@@ -189,7 +157,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
         </ScrollView>
       ) : (
         <View style={styles.centerBox}>
-          <Text style={styles.errorText}>Resep dari layanan belum bisa dibaca.</Text>
+          <Text style={styles.errorText}>Resep RAG belum tersedia.</Text>
           <Text style={styles.centerText}>Kembali dan coba lagi setelah layanan pulih.</Text>
         </View>
       )}
@@ -216,32 +184,26 @@ const styles = StyleSheet.create({
   content: { paddingVertical: spacing.lg, paddingBottom: spacing.xxl },
   placeholder: { textAlign: 'center', marginTop: spacing.xxl, color: colors.textMuted },
   centerBox: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl },
-  centerText: { color: colors.textMuted, marginTop: spacing.md, textAlign: 'center' },
+  narration: { ...typography.h3, color: colors.text, marginTop: spacing.md, textAlign: 'center' },
+  centerText: { color: colors.textMuted, marginTop: spacing.xs, textAlign: 'center' },
   errorText: { color: colors.danger, fontWeight: '700' },
   title: { ...typography.h2, color: colors.text },
-  metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, flexWrap: 'wrap' },
-  metaChip: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-  },
-  metaText: { fontSize: 13, color: colors.text, fontWeight: '600' },
+  metaText: { ...typography.bodySm, color: colors.textMuted, marginTop: spacing.xs },
   sectionTitle: {
     ...typography.h3,
     color: colors.text,
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
+    marginTop: spacing.lg,
+    marginBottom: spacing.xs,
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
+    borderRadius: radius.md,
+    padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  ingredient: { ...typography.body, color: colors.text, marginBottom: spacing.xs },
-  stepRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
+  ingredient: { ...typography.bodySm, color: colors.text, marginBottom: 4 },
+  stepRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   stepNum: {
     width: 28,
     height: 28,
@@ -255,7 +217,7 @@ const styles = StyleSheet.create({
   stepTitle: { ...typography.body, color: colors.text, fontWeight: '700' },
   stepTimer: { color: colors.primary, fontWeight: '600' },
   stepInstr: { ...typography.bodySm, color: colors.textMuted, marginTop: 2 },
-  cta: { marginTop: spacing.xl },
+  cta: { marginTop: spacing.lg },
   retry: { marginTop: spacing.lg, alignSelf: 'stretch' },
   muted: { color: colors.textMuted },
 });

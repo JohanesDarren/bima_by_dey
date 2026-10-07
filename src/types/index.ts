@@ -74,6 +74,12 @@ export interface Segment {
   condition: SpecialCondition | null;
 }
 
+/**
+ * Tahap memuat 3 menu — dipakai untuk narasi loading yang ikut berubah:
+ * `menus` saat menyusun daftar, `recipes` saat prefetch detail resep.
+ */
+export type MenuLoadingPhase = 'menus' | 'recipes' | null;
+
 /** Satu kartu menu andalan (dari RAG, format hasil probe). */
 export interface MenuItem {
   name: string;

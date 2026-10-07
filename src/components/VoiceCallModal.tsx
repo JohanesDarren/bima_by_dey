@@ -1,18 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { ChefLoader } from './ChefLoader';
+import { useLoadingNarration } from '../hooks/useLoadingNarration';
 import { colors, radius, spacing, typography } from '../theme';
 import { useVoiceCall } from '../hooks/useVoiceCall';
-import { VOICE_LOADING_STAGES } from '../utils/assistantText';
 import type { Segment } from '../types';
 
 interface Props {
@@ -21,36 +14,13 @@ interface Props {
   segment: Segment;
   recipeName?: string;
   stepLabel?: string;
-  /** Daftar bahan resep yang sedang dimasak — dipakai menjawab pertanyaan pengganti bahan. */
-  recipeIngredients?: string;
 }
 
-export function VoiceCallModal({
-  visible,
-  onClose,
-  segment,
-  recipeName,
-  stepLabel,
-  recipeIngredients,
-}: Props) {
-  const { state, errorMsg, startCall, stopCall } = useVoiceCall(
-    segment,
-    recipeName,
-    stepLabel,
-    recipeIngredients,
-  );
+export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabel }: Props) {
+  const { state, errorMsg, startCall, stopCall } = useVoiceCall(segment, recipeName, stepLabel);
   const [muted, setMuted] = useState(false);
-  /** Tahapan menunggu jawaban (teks bergantian) — lihat VOICE_LOADING_STAGES. */
-  const [thinkingStage, setThinkingStage] = useState(0);
-
-  useEffect(() => {
-    if (state !== 'thinking') {
-      setThinkingStage(0);
-      return;
-    }
-    const timer = setInterval(() => setThinkingStage((value) => value + 1), 2500);
-    return () => clearInterval(timer);
-  }, [state]);
+  // Status berputar selama Chef AI menyusun jawaban (selaras dengan layar memuat lain).
+  const thinkingText = useLoadingNarration('voice', state === 'thinking', 1600);
 
   useEffect(() => {
     if (!visible) return;
@@ -68,7 +38,7 @@ export function VoiceCallModal({
 
   const toggleMute = () => {
     if (muted) startCall();
-    else stopCall({ keepHistory: true });
+    else stopCall();
     setMuted((value) => !value);
   };
 
@@ -77,7 +47,7 @@ export function VoiceCallModal({
     : state === 'listening'
       ? 'Silakan bicara'
       : state === 'thinking'
-        ? VOICE_LOADING_STAGES[thinkingStage % VOICE_LOADING_STAGES.length]
+        ? thinkingText
         : state === 'speaking'
           ? 'Chef AI sedang menjawab'
           : state === 'error'
@@ -105,18 +75,30 @@ export function VoiceCallModal({
             onPress={close}
             style={styles.close}
           >
-            <MaterialIcons name="close" size={23} color={colors.text} />
+            <MaterialIcons name="close" size={23} color={colors.textOnPrimary} />
           </Pressable>
         </View>
 
-        {/* Bagian tengah dibungkus guliran: di layar pendek atau saat huruf sistem
-            diperbesar, isi modal yang tinggi tetap bisa dijangkau dan tombol akhiri
-            panggilan (di luar area gulir) selalu bisa ditekan. */}
-        <ScrollView
-          style={styles.callArea}
-          contentContainerStyle={styles.callAreaContent}
-          showsVerticalScrollIndicator={false}
-        >
+        <View style={styles.modeToggle} accessibilityRole="tablist">
+          <View
+            accessibilityRole="tab"
+            accessibilityState={{ selected: true }}
+            style={[styles.modeButton, styles.modeButtonActive]}
+          >
+            <Text style={styles.modeTextActive}>Suara</Text>
+          </View>
+          <Pressable
+            accessibilityRole="tab"
+            accessibilityState={{ selected: false }}
+            accessibilityLabel="Beralih ke Chat"
+            onPress={close}
+            style={styles.modeButton}
+          >
+            <Text style={styles.modeText}>Chat</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.callArea}>
           <View
             style={[
               styles.orbOuter,
@@ -126,7 +108,7 @@ export function VoiceCallModal({
           >
             <View style={styles.orb}>
               {state === 'thinking' ? (
-                <ActivityIndicator size="large" color={colors.primaryDark} />
+                <ChefLoader size={104} accessibilityLabel="Chef AI sedang menyusun jawaban" />
               ) : (
                 <MaterialIcons
                   name={state === 'speaking' ? 'graphic-eq' : muted ? 'mic-off' : 'mic'}
@@ -148,7 +130,7 @@ export function VoiceCallModal({
               </Pressable>
             </View>
           ) : null}
-        </ScrollView>
+        </View>
 
         <View style={styles.controls}>
           <Pressable
@@ -183,26 +165,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.primaryDark,
+    backgroundColor: colors.primary,
   },
   headerCopy: { flex: 1, minWidth: 0 },
-  title: { ...typography.h3, color: colors.primary },
-  recipe: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+  title: { ...typography.h3, color: colors.textOnPrimary },
+  recipe: { ...typography.caption, color: colors.primaryLight, marginTop: 2 },
   close: {
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.primaryDark,
   },
-  callArea: { flex: 1 },
-  callAreaContent: {
-    flexGrow: 1,
+  modeToggle: {
+    alignSelf: 'center',
+    width: 190,
+    marginTop: spacing.md,
+    padding: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+    borderWidth: 1,
+    borderColor: colors.primaryDark,
+    flexDirection: 'row',
+  },
+  modeButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeButtonActive: { backgroundColor: colors.accent },
+  modeText: { ...typography.caption, color: colors.textOnPrimary, fontWeight: '700' },
+  modeTextActive: { ...typography.caption, color: colors.primaryDark, fontWeight: '800' },
+  callArea: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
   },
   orbOuter: {
     width: 176,

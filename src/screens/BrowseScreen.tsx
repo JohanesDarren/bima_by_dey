@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Button } from '../components/Button';
 import { SelectionChip } from '../components/SelectionChip';
 import { MenuCard } from '../components/MenuCard';
+import { ChefLoader } from '../components/ChefLoader';
+import { useLoadingNarration } from '../hooks/useLoadingNarration';
 import { AGE_GROUPS, isConditionAllowed, isUnder18, SPECIAL_CONDITIONS } from '../constants';
 import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
@@ -34,6 +36,7 @@ export function BrowseScreen({ navigation }: Props) {
   const segment = useFlowStore((s) => s.segment);
   const menus = useFlowStore((s) => s.menus);
   const loadingMenus = useFlowStore((s) => s.loadingMenus);
+  const loadingPhase = useFlowStore((s) => s.loadingPhase);
   const menusError = useFlowStore((s) => s.menusError);
   const category = useFlowStore((s) => s.category);
   const setSegment = useFlowStore((s) => s.setSegment);
@@ -43,6 +46,9 @@ export function BrowseScreen({ navigation }: Props) {
   const [ageGroup, setAgeGroup] = useState<AgeGroup | null>(segment.ageGroup);
   const [condition, setCondition] = useState<SpecialCondition | null>(segment.condition);
   const segmentReady = ageGroup !== null && condition !== null;
+  // Layar penuh "Menyiapkan 3 menu": spinner + narasi yang berganti sesuai tahap.
+  const showingLoader = loadingMenus && menus.length === 0;
+  const narration = useLoadingNarration(loadingPhase ?? 'menus', showingLoader);
 
   const chooseAge = (nextAge: AgeGroup) => {
     const nextCondition = condition && isConditionAllowed(nextAge, condition) ? condition : null;
@@ -160,7 +166,7 @@ export function BrowseScreen({ navigation }: Props) {
           title="Buat 3 menu"
           onPress={() => generate(false)}
           disabled={!segmentReady || !category || loadingMenus}
-          loading={loadingMenus && menus.length === 0}
+          loading={showingLoader}
           style={styles.primaryAction}
         />
 
@@ -177,11 +183,13 @@ export function BrowseScreen({ navigation }: Props) {
           </View>
         ) : null}
 
-        {loadingMenus && menus.length === 0 ? (
+        {showingLoader ? (
           <View style={styles.stateBox} accessibilityLiveRegion="polite">
-            <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={styles.stateTitle}>Menyiapkan 3 menu</Text>
-            <Text style={styles.stateText}>Mengambil menu dari pengetahuan sorgum.</Text>
+            <ChefLoader size={128} accessibilityLabel="Menyiapkan 3 menu" />
+            <Text style={styles.stateTitle}>{narration}</Text>
+            <Text style={styles.stateText}>
+              Menyiapkan 3 menu sekaligus detail resepnya agar langsung terbuka tanpa menunggu.
+            </Text>
           </View>
         ) : menus.length > 0 ? (
           <View style={styles.menuList}>

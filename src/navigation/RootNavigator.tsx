@@ -2,7 +2,8 @@ import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { ChefLoader } from '../components/ChefLoader';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useChatStore } from '../store/chatStore';
@@ -22,7 +23,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 function LoadingScreen() {
   return (
     <View style={styles.loading}>
-      <ActivityIndicator size="large" color={colors.primary} />
+      <ChefLoader size={120} accessibilityLabel="Menyiapkan profil" />
     </View>
   );
 }
