@@ -116,7 +116,6 @@ export function AICompanion({
           // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
           history: buildChefHistory(messages),
           useRag: true,
-          stream: true,
           // Kuota token keluaran (dipungut dari versi upstream). 250 ≈ 3x batas 30 kata
           // kita, jadi longgar untuk jawaban benar dan hanya memotong yang berlarut.
           maxTokens: 250,

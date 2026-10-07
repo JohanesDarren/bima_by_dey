@@ -2,10 +2,10 @@ import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Constants from 'expo-constants';
 import { Button } from '../components/Button';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
-import { useChatStore } from '../store/chatStore';
 import { useFlowStore } from '../store/flowStore';
 import { localStore } from '../lib/storage';
 import { confirmAsync } from '../utils/confirm';
@@ -21,7 +21,6 @@ export function SettingsScreen({ navigation }: Props) {
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
   const resetProfile = useProfileStore((s) => s.reset);
-  const resetChat = useChatStore((s) => s.resetChat);
   const resetFlow = useFlowStore((s) => s.reset);
 
   const wipeLocalData = async () => {
@@ -35,7 +34,6 @@ export function SettingsScreen({ navigation }: Props) {
     if (isGuest) await signOut();
     localStore.clearAll();
     resetProfile();
-    resetChat();
     resetFlow();
   };
 
@@ -80,7 +78,9 @@ export function SettingsScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.infoText}>sorgumcore v1.0.0</Text>
+          <Text style={styles.infoText}>
+            sorgumcore v{Constants.expoConfig?.version ?? '1.7.0'}
+          </Text>
           <Text style={styles.infoSub}>Sorghum AI Nutritionist — prototype akademik</Text>
         </View>
 

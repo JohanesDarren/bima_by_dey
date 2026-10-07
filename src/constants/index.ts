@@ -20,6 +20,18 @@ export const SPECIAL_CONDITIONS: { label: string; value: SpecialCondition; emoji
 export const isUnder18 = (ageGroup: AgeGroup | null): boolean =>
   ageGroup === 'Balita' || ageGroup === 'Anak SD' || ageGroup === 'Remaja';
 
+/**
+ * Berapa menu yang diminta sekali jalan. Tiap menu = SATU permintaan RAG terpisah
+ * yang dijalankan bersamaan (server mengirim jawaban sekaligus di akhir, jadi satu
+ * permintaan besar tidak bisa menampilkan hasil bertahap dan lebih rapuh).
+ * Dipakai oleh store (jumlah permintaan) DAN layar (teks tombol) supaya tidak
+ * terpisah-pisah dan lupa disamakan saat diubah.
+ */
+export const MENU_COUNT = 2;
+
+/** Pesan saat RAG tidak menghasilkan menu baru. Satu sumber, dipakai layanan & store. */
+export const NO_NEW_MENU_MESSAGE = 'RAG belum menghasilkan menu baru. Coba lagi.';
+
 export const isConditionAllowed = (
   ageGroup: AgeGroup | null,
   condition: SpecialCondition,
@@ -28,9 +40,3 @@ export const isConditionAllowed = (
   if (ageGroup === 'Lansia' && condition === 'Busui') return false;
   return true;
 };
-
-/** Stable order used by the kebab menu in Settings — never delete entries. */
-export const SUPPORTED_AGE_GROUP_VALUES: AgeGroup[] = AGE_GROUPS.map((a) => a.value);
-export const SUPPORTED_CONDITION_VALUES: SpecialCondition[] = SPECIAL_CONDITIONS.map(
-  (c) => c.value,
-);

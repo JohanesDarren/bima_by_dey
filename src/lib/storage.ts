@@ -5,7 +5,6 @@ const KEYS = {
   aiReasoningEnabled: 'ai_reasoning_enabled',
   cachedProfile: 'cached_profile', // JSON of the demographic profile for guests
   lastUserId: 'last_user_id',
-  guestHistory: 'guest_chat_history',
   cookHistory: 'cook_history',
 } as const;
 
@@ -123,10 +122,6 @@ export function setString(key: string, value: string): void {
   backend.set(key, value);
 }
 
-export function removeKey(key: string): void {
-  backend.delete(key);
-}
-
 // --- App-specific storage API ---------------------------------------------
 
 export const localStore = {
@@ -165,14 +160,6 @@ export const localStore = {
     setString(KEYS.lastUserId, id);
   },
 
-  /** Riwayat chat tamu (guest) — disimpan sinkron ke MMKV/localStorage. */
-  getGuestHistory(): string | undefined {
-    return getString(KEYS.guestHistory);
-  },
-  setGuestHistory(value: string): void {
-    setString(KEYS.guestHistory, value);
-  },
-
   /** Riwayat sesi masak tamu (list sesi terselesaikan). */
   getCookHistory<T>(): T[] {
     const raw = getString(KEYS.cookHistory);
@@ -193,5 +180,3 @@ export const localStore = {
     backend.clearAll();
   },
 };
-
-export { KEYS };

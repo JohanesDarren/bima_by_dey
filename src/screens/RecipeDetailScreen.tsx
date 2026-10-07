@@ -75,7 +75,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
             return;
           }
           setError(
-            useFlowStore.getState().menusError ||
+            useFlowStore.getState().recipeError ||
               'Layanan resep tidak merespons. Coba lagi sebentar lagi.',
           );
         })
@@ -190,7 +190,17 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
       ) : (
         <View style={styles.centerBox}>
           <Text style={styles.errorText}>Resep dari layanan belum bisa dibaca.</Text>
-          <Text style={styles.centerText}>Kembali dan coba lagi setelah layanan pulih.</Text>
+          <Text style={styles.centerText}>
+            Layanan sedang tidak mengirim resep yang bisa dibaca. Coba lagi.
+          </Text>
+          <Button
+            title="Coba lagi"
+            onPress={() => {
+              setError(null);
+              setRetryKey((value) => value + 1);
+            }}
+            style={styles.retry}
+          />
         </View>
       )}
     </SafeAreaView>

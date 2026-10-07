@@ -24,7 +24,6 @@ export interface StreamRequest {
   history?: HistoryEntry[];
   model?: string | null;
   useRag?: boolean;
-  stream?: boolean;
   /**
    * Batas token keluaran (dipungut dari versi upstream). Berguna sebagai jaring terhadap
    * jawaban yang berlarut-larut: panjang keluaran ≈ lama proses. Nilainya sengaja
@@ -67,7 +66,9 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
       history: req.history ?? [],
       model: req.model ?? null,
       useRag: req.useRag ?? true,
-      stream: req.stream ?? true,
+      // Selalu streaming: jawaban RAG terstruktur bisa makan 1-4 menit, dan
+      // sambungan SSE menjaga proxy tetap hidup (menghindari 502 gateway).
+      stream: true,
       ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
     }),
     pollingInterval: 0,
@@ -213,12 +214,8 @@ export function serverFailureText(raw: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Non-streaming call (untuk data terstruktur: menu, resep, dsb)
+// Streaming call (semua permintaan: menu, resep, chat)
 // ---------------------------------------------------------------------------
-
-export interface ChatResponse {
-  response: string;
-}
 
 /**
  * Potongan JSON pertama yang SUDAH utuh di dalam teks (kurung seimbang, sadar
@@ -295,14 +292,17 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
     const timeout = setTimeout(
       () =>
         finish(() => reject(new KroomboxError('Layanan RAG terlalu lama merespons. Coba lagi.'))),
-      // 240s (dulu 180s): permintaan resep terukur pernah butuh 195-224 detik, jadi
-      // batas 180 detik membunuh permintaan yang datanya sebenarnya sudah jadi.
-      240_000,
+      // 330s (dulu 240s, awalnya 180s): permintaan resep TERUKUR pernah memakan 195-234
+      // detik. Batas 240 detik terlalu mepet — permintaan yang datanya sebenarnya sudah
+      // jadi dibunuh beberapa detik sebelum selesai, lalu pengguna melihat kegagalan.
+      // Kelebihan ini hanya dipakai saat server benar-benar lambat; jalur cepat tidak
+      // terpengaruh karena sambungan tetap ditutup begitu JSON lengkap terbaca.
+      330_000,
     );
 
     try {
       stream = streamKroomboxChat(
-        { ...req, stream: true },
+        { ...req },
         {
           onToken: (token) => {
             text += token;
@@ -333,38 +333,15 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
 }
 
 /**
- * Panggil /api/chat NON-streaming (fetch biasa). Dipakai saat butuh respons
- * utuh yang mudah diparse (menu andalan, resep step-by-step).
+ * Panggil /api/chat dan kembalikan jawaban utuh sebagai satu string.
+ *
+ * Selalu lewat streaming lalu dikumpulkan kembali: itu satu-satunya bentuk yang
+ * terbukti bertahan pada jawaban RAG terstruktur (menu andalan, resep
+ * step-by-step) yang bisa makan 1-4 menit. Jalur fetch non-streaming lama sudah
+ * dibuang — tidak ada pemanggil yang memakainya dan justru rawan 502 dari proxy.
  */
 export async function chatKroombox(req: StreamRequest): Promise<string> {
-  if (req.stream) return collectKroomboxStream(req);
-  const url = `${KROOMBOX_BASE_URL}${KROOMBOX_CHAT_ENDPOINT}`;
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': KROOMBOX_API_KEY,
-      },
-      body: JSON.stringify({
-        message: req.message,
-        history: req.history ?? [],
-        model: req.model ?? null,
-        useRag: req.useRag ?? true,
-        stream: false,
-        ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
-      }),
-    });
-    if (!res.ok) throw new KroomboxError(`Layanan RAG sedang bermasalah (HTTP ${res.status}).`);
-    const data = (await res.json()) as ChatResponse;
-    if (typeof data.response !== 'string' || !data.response.trim()) {
-      throw new KroomboxError('Layanan RAG mengembalikan jawaban kosong. Coba lagi.');
-    }
-    return data.response;
-  } catch (error) {
-    if (error instanceof KroomboxError) throw error;
-    throw new KroomboxError('Layanan RAG tidak dapat dihubungi. Coba lagi nanti.');
-  }
+  return collectKroomboxStream(req);
 }
 
 /**
@@ -373,50 +350,76 @@ export async function chatKroombox(req: StreamRequest): Promise<string> {
  * menuliskan contoh kunci tanpa kutip dan model menyalinnya apa adanya. Kutip
  * kuncinya dulu sebelum menyerah: jauh lebih murah daripada mengulang permintaan
  * yang butuh 1-4 menit.
+ *
+ * PENTING — hanya menambal kunci di LUAR tanda kutip. Versi polos `([{,]\s*)(\w+)(\s*:)`
+ * juga cocok di dalam teks biasa, sehingga kalimat seperti `"Bahan, lalu: masukkan"`
+ * berubah jadi `"Bahan, "lalu": masukkan"` dan JSON-nya MALAH rusak. Jadi kita
+ * telusuri teksnya sambil melacak apakah sedang berada di dalam string.
  */
 function quoteBareKeys(value: string): string {
-  return value.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
-}
-
-/**
- * Ekstrak JSON array dari respons (strip fence) → T[] | null.
- * Respons menu & pencarian berbentuk array — extractJson (objek) tak cukup.
- */
-export function extractJsonArray<T>(raw: string): T[] | null {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = fence ? fence[1]!.trim() : trimmed;
-  const start = candidate.indexOf('[');
-  const end = candidate.lastIndexOf(']');
-  if (start === -1 || end === -1 || end <= start) return null;
-  const slice = candidate.slice(start, end + 1);
-  try {
-    const v = JSON.parse(slice) as T[];
-    return Array.isArray(v) ? v : null;
-  } catch {
-    try {
-      const fixed = JSON.parse(quoteBareKeys(slice)) as T[];
-      return Array.isArray(fixed) ? fixed : null;
-    } catch {
-      return null;
+  let out = '';
+  let inString = false;
+  let escaped = false;
+  let expectKey = false; // barusan lewat `{` atau `,` di luar string → kunci menyusul
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i]!;
+    if (inString) {
+      out += char;
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
     }
+    if (char === '"') {
+      inString = true;
+      expectKey = false;
+      out += char;
+      continue;
+    }
+    if (char === '{' || char === ',') {
+      expectKey = true;
+      out += char;
+      continue;
+    }
+    if (char === ':' || char === '}' || char === ']') {
+      expectKey = false;
+      out += char;
+      continue;
+    }
+    if (expectKey && /[A-Za-z_$]/.test(char)) {
+      // Awal kunci telanjang: kutip sampai sebelum titik dua.
+      let end = i;
+      while (end < value.length && /[A-Za-z0-9_$]/.test(value[end]!)) end += 1;
+      const rest = value.slice(end).match(/^\s*:/);
+      if (rest) {
+        out += `"${value.slice(i, end)}"`;
+        i = end - 1;
+        expectKey = false;
+        continue;
+      }
+    }
+    if (/\s/.test(char)) {
+      out += char;
+      continue;
+    }
+    expectKey = false;
+    out += char;
   }
+  return out;
 }
 
 /**
- * Ekstrak JSON dari respons yang mungkin dibungkus markdown fence
- * (```json ... ```) atau ada teks pengantar. Return null jika tidak ketemu.
+ * Inti bersama extractJson / extractJsonArray: buang pagar markdown, ambil potongan
+ * dari tanda buka pertama sampai tanda tutup terakhir, lalu parse — dengan satu kali
+ * percobaan menambal kunci telanjang sebelum menyerah.
  */
-export function extractJson<T>(raw: string): T | null {
+function parseJsonSlice<T>(raw: string, open: string, close: string): T | null {
   if (!raw) return null;
   const trimmed = raw.trim();
-  // Strip ```json ... ``` fence
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = fence ? fence[1]!.trim() : trimmed;
-  // Kalau masih ada teks sebelum { atau setelah }, potong di kurung pertama/terakhir
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
+  const start = candidate.indexOf(open);
+  const end = candidate.lastIndexOf(close);
   if (start === -1 || end === -1 || end <= start) return null;
   const slice = candidate.slice(start, end + 1);
   try {
@@ -428,4 +431,21 @@ export function extractJson<T>(raw: string): T | null {
       return null;
     }
   }
+}
+
+/**
+ * Ekstrak JSON array dari respons (strip fence) → T[] | null.
+ * Respons menu & pencarian berbentuk array — extractJson (objek) tak cukup.
+ */
+export function extractJsonArray<T>(raw: string): T[] | null {
+  const value = parseJsonSlice<T[]>(raw, '[', ']');
+  return Array.isArray(value) ? value : null;
+}
+
+/**
+ * Ekstrak JSON dari respons yang mungkin dibungkus markdown fence
+ * (```json ... ```) atau ada teks pengantar. Return null jika tidak ketemu.
+ */
+export function extractJson<T>(raw: string): T | null {
+  return parseJsonSlice<T>(raw, '{', '}');
 }

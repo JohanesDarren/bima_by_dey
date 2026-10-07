@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { FoodCategory, MenuItem, Recipe, Segment } from '../types';
 import { getRecipe, searchRecipes } from '../services/menu';
+import { MENU_COUNT, NO_NEW_MENU_MESSAGE } from '../constants';
 import { menuKey } from '../utils/menuKey';
 
 interface FlowState {
@@ -9,6 +10,12 @@ interface FlowState {
   menus: MenuItem[];
   loadingMenus: boolean;
   menusError: string | null;
+  /**
+   * Galat pengambilan RESEP, dipisah dari `menusError`. Dulu keduanya memakai satu
+   * field, sehingga kegagalan membuka resep ikut muncul sebagai "menu gagal dimuat"
+   * di layar Beranda — dua urusan berbeda yang saling mengotori.
+   */
+  recipeError: string | null;
   /** Resep terpilih utk layar Cooking (fallback bila nav param tak ada). */
   activeRecipe: Recipe | null;
   activeMenu: MenuItem | null;
@@ -35,6 +42,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   menus: [],
   loadingMenus: false,
   menusError: null,
+  recipeError: null,
   activeRecipe: null,
   activeMenu: null,
 
@@ -51,21 +59,27 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   generateMenus: async (segment, category, append = false) => {
     const requestId = ++menuRequestId;
     const previous = append ? get().menus : [];
-    set({ loadingMenus: true, menusError: null });
+    set({ loadingMenus: true, menusError: null, ...(append ? {} : { menus: [] }) });
     try {
       const generated = await searchRecipes({
         segment,
         category,
+        count: MENU_COUNT,
         excludedNames: previous.map((menu) => menu.name),
       });
       if (requestId !== menuRequestId) return;
+      // Sebagian hasil tetap berguna: tampilkan yang ada, jangan dibuang.
+      // (Server mengirim jawaban sekaligus di akhir, jadi tidak ada gunanya
+      // menampilkan bertahap — semua menu muncul bersama di sini.)
+      if (generated.length === 0) throw new Error(NO_NEW_MENU_MESSAGE);
       const seen = new Set(previous.map((menu) => menuKey(menu.name)));
-      const unique = generated.filter((menu) => !seen.has(menuKey(menu.name))).slice(0, 3);
-      if (unique.length !== 3) throw new Error('RAG belum menghasilkan 3 menu baru. Coba lagi.');
+      const unique = generated.filter((menu) => !seen.has(menuKey(menu.name)));
+      if (unique.length === 0) throw new Error(NO_NEW_MENU_MESSAGE);
       set({ menus: [...previous, ...unique], loadingMenus: false, segment, category });
     } catch (e) {
       if (requestId !== menuRequestId) return;
-      set({ loadingMenus: false, menusError: (e as Error).message });
+      const message = (e as Error)?.message?.trim() || NO_NEW_MENU_MESSAGE;
+      set({ loadingMenus: false, menusError: message });
     }
   },
 
@@ -73,6 +87,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     // Penjaga balapan: dua menu dibuka cepat → yang menang harus yang terakhir
     // diminta, bukan yang terakhir selesai (jawaban RAG bisa datang tak berurutan).
     const requestId = ++recipeRequestId;
+    set({ recipeError: null });
     try {
       const recipe = await getRecipe(menu.name, segment);
       if (requestId !== recipeRequestId) return recipe;
@@ -83,7 +98,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       // belum tersedia") dan sebab aslinya hilang.
       const message =
         (e as Error)?.message?.trim() || 'Koneksi ke layanan resep terputus. Coba lagi.';
-      if (requestId === recipeRequestId) set({ menusError: message });
+      if (requestId === recipeRequestId) set({ recipeError: message });
       return null;
     }
   },
@@ -99,6 +114,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       menus: [],
       loadingMenus: false,
       menusError: null,
+      recipeError: null,
       activeRecipe: null,
       activeMenu: null,
     });

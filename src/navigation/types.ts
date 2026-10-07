@@ -18,10 +18,4 @@ declare global {
   }
 }
 
-/** State berbagi antar screen alur masak (segment terpilih, dll). */
-export interface FlowContext {
-  segment: Segment;
-  category: FoodCategory | null;
-}
-
 export type { FoodCategory, MenuItem, Recipe, Segment };

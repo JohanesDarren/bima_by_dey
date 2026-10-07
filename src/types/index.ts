@@ -32,35 +32,6 @@ export interface ChatMessage {
   created_at?: string;
 }
 
-export interface ChatSession {
-  id: string;
-  title: string;
-  created_at: string;
-}
-
-/** Payload sent to Kroombox /api/chat (per PRD 5.4). */
-export interface KroomboxChatMessage {
-  role: MessageRole;
-  content: string;
-}
-
-export interface KroomboxRequest {
-  messages: KroomboxChatMessage[];
-  stream: boolean;
-  use_rag: boolean;
-}
-
-/** Shape of each SSE `data: {...}` chunk emitted by the Kroombox API. */
-export interface KroomboxStreamChunk {
-  choices?: {
-    delta?: { content?: string; reasoning_content?: string };
-    finish_reason?: string | null;
-  }[];
-  message?: { content?: string; reasoning_content?: string };
-  done?: boolean;
-  error?: string;
-}
-
 // ---------------------------------------------------------------------------
 // Alur baru (discovery-first) — tipe hasil probe API RAG (2026-09-10)
 // ---------------------------------------------------------------------------
@@ -101,15 +72,13 @@ export interface Recipe {
   ingredients: string[];
   steps: RecipeStep[];
   totalMinutes: number;
-  /** Sumber transparansi — nama dokumen KB bila tersedia. */
-  sourceDocs?: string[];
 }
 
-/** Segmen + kategori yang dipakai untuk request resep. */
+/** Segmen + kategori yang dipakai untuk request menu. */
 export interface RecipeRequest {
-  menuName?: string;
-  query?: string;
   segment: Segment;
   category: FoodCategory | null;
   excludedNames?: string[];
+  /** Berapa menu yang diminta (bawaan 2). Tiap menu = satu permintaan terpisah. */
+  count?: number;
 }

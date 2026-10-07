@@ -137,7 +137,6 @@ export function useVoiceCall(
           // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
           history: historyRef.current,
           useRag: true,
-          stream: true,
           // Kuota token keluaran (dipungut dari versi upstream); 150 ≈ 3x batas 25 kata.
           maxTokens: 150,
         },

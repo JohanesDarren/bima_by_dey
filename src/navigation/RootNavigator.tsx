@@ -5,7 +5,6 @@ import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
-import { useChatStore } from '../store/chatStore';
 import { BrowseScreen } from '../screens/BrowseScreen';
 import { CookingScreen } from '../screens/CookingScreen';
 import { HistoryScreen } from '../screens/HistoryScreen';
@@ -44,7 +43,6 @@ export function RootNavigator() {
   const hydrated = useProfileStore((s) => s.hydrated);
   const fetchProfile = useProfileStore((s) => s.fetchProfile);
   const bootstrap = useAuthStore((s) => s.bootstrap);
-  const hydrateGuestHistory = useChatStore((s) => s.hydrateGuestHistory);
 
   const signedIn = status === 'signedIn';
 
@@ -55,14 +53,6 @@ export function RootNavigator() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootstrapped]);
-
-  // After auth resolves to guest, restore guest chat history from disk.
-  useEffect(() => {
-    if (bootstrapped && isGuest) {
-      hydrateGuestHistory();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootstrapped, isGuest]);
 
   // Once auth resolves, hydrate the profile before choosing the route.
   useEffect(() => {

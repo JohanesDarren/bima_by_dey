@@ -6,7 +6,13 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Button } from '../components/Button';
 import { SelectionChip } from '../components/SelectionChip';
 import { MenuCard } from '../components/MenuCard';
-import { AGE_GROUPS, isConditionAllowed, isUnder18, SPECIAL_CONDITIONS } from '../constants';
+import {
+  AGE_GROUPS,
+  isConditionAllowed,
+  isUnder18,
+  MENU_COUNT,
+  SPECIAL_CONDITIONS,
+} from '../constants';
 import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography } from '../theme';
@@ -157,7 +163,7 @@ export function BrowseScreen({ navigation }: Props) {
         </View>
 
         <Button
-          title="Buat 3 menu"
+          title={`Buat ${MENU_COUNT} menu`}
           onPress={() => generate(false)}
           disabled={!segmentReady || !category || loadingMenus}
           loading={loadingMenus && menus.length === 0}
@@ -180,7 +186,7 @@ export function BrowseScreen({ navigation }: Props) {
         {loadingMenus && menus.length === 0 ? (
           <View style={styles.stateBox} accessibilityLiveRegion="polite">
             <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={styles.stateTitle}>Menyiapkan 3 menu</Text>
+            <Text style={styles.stateTitle}>Menyiapkan menu</Text>
             <Text style={styles.stateText}>Mengambil menu dari pengetahuan sorgum.</Text>
           </View>
         ) : menus.length > 0 ? (
@@ -203,7 +209,7 @@ export function BrowseScreen({ navigation }: Props) {
               />
             ))}
             <Button
-              title="Buat 3 menu lainnya"
+              title={`Buat ${MENU_COUNT} menu lainnya`}
               onPress={() => generate(true)}
               loading={loadingMenus}
               disabled={loadingMenus}

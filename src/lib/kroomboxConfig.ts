@@ -1,5 +1,3 @@
-import { Platform } from 'react-native';
-
 /**
  * Kroombox RAG API config (PRD §5.4).
  *
@@ -15,6 +13,3 @@ export const KROOMBOX_API_KEY =
 
 /** Endpoint streaming chat. */
 export const KROOMBOX_CHAT_ENDPOINT = '/api/chat';
-
-/** Android emulator reaches the host machine via 10.0.2.2. */
-export const isAndroid = Platform.OS === 'android';
