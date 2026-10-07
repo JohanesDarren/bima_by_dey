@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { AppGradient } from '../components/AppGradient';
+import { ChefMark } from '../components/ChefMark';
 import { useAuthStore } from '../store/authStore';
 import { colors, radius, spacing, typography } from '../theme';
 
@@ -24,7 +25,7 @@ export function LoginScreen() {
             <View style={styles.haloLarge} />
             <View style={styles.haloSmall} />
             <View style={styles.heroMark}>
-              <MaterialIcons name="restaurant" size={54} color={colors.primaryDark} />
+              <ChefMark size={104} />
             </View>
             <View style={[styles.seed, styles.seedTop]}>
               <MaterialIcons name="eco" size={20} color={colors.primaryDark} />
@@ -106,7 +107,7 @@ const styles = StyleSheet.create({
     borderRadius: 63,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#BDE5CF',
+    backgroundColor: '#FFF3E6',
     borderWidth: 7,
     borderColor: 'rgba(250,246,240,0.28)',
   },

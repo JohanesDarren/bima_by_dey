@@ -12,8 +12,9 @@ import {
 import * as Speech from 'expo-speech';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ChefLoader } from './ChefLoader';
+import { ChefMark } from './ChefMark';
 import { useLoadingNarration } from '../hooks/useLoadingNarration';
-import { colors, radius, spacing, typography, elevation } from '../theme';
+import { colors, radius, spacing, typography } from '../theme';
 import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/kroombox';
 import {
@@ -31,35 +32,28 @@ type EventSubscription = { remove: () => void };
 
 interface Props {
   context: string;
-  recipeName: string;
   recipeMeta?: string;
   placeholder?: string;
-  compact?: boolean;
-  simple?: boolean;
-  onVoiceCall?: () => void;
   onAssistantMessage?: (text: string) => void;
 }
 
 const SUGGESTIONS = ['Pengganti bahan?', 'Ubah jumlah porsi?', 'Jelaskan langkah ini'];
 
-export function AICompanion({
-  context,
-  recipeName,
-  recipeMeta,
-  placeholder,
-  compact,
-  simple = false,
-  onVoiceCall,
-  onAssistantMessage,
-}: Props) {
+/**
+ * Chat pendamping resep bergaya messenger: kepala obrolan tipis, daftar balon
+ * pesan yang mengisi sisa tinggi layar, saran singkat, lalu kolom tulis di
+ * bawah. Pengalih mode (chat/suara) tidak lagi di sini — ia milik halaman masak,
+ * supaya widget langkah dan tombol mode tetap terlihat di kedua mode.
+ */
+export function AICompanion({ context, recipeMeta, placeholder, onAssistantMessage }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
-  const [autoSpeak, setAutoSpeak] = useState(!simple);
+  const [autoSpeak, setAutoSpeak] = useState(false);
   const [lastQuestion, setLastQuestion] = useState('');
   const [recording, setRecording] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  // Status berputar + maskot 3D selama balasan disusun.
+  // Status berputar + maskot selama balasan disusun.
   const chatStatus = useLoadingNarration('chat', streaming);
   const scrollRef = useRef<ScrollView>(null);
   const streamRef = useRef<{ close: () => void } | null>(null);
@@ -266,61 +260,21 @@ export function AICompanion({
   }, [cleanupVoiceMessage, recording, send, streaming]);
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[styles.panel, compact && styles.panelCompact, elevation.sm]}>
-        <View style={[styles.recipeCard, simple && styles.hidden]}>
-          <View style={styles.recipeInitials}>
-            <Text style={styles.recipeInitialsText}>
-              {recipeName
-                .split(/\s+/)
-                .slice(0, 2)
-                .map((word) => word[0])
-                .join('')
-                .toUpperCase()}
-            </Text>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={styles.flex}>
+        {/* Kepala obrolan bergaya messenger. */}
+        <View style={styles.chatHeader}>
+          <View style={styles.avatar}>
+            <ChefMark size={36} halo={false} accessibilityLabel="Chef Sorghum AI" />
           </View>
-          <View style={styles.recipeCopy}>
-            <Text style={styles.recipeBadge}>RESEP AKTIF</Text>
-            <Text style={styles.recipeTitle} numberOfLines={1}>
-              {recipeName}
-            </Text>
-            {recipeMeta ? <Text style={styles.recipeMeta}>{recipeMeta}</Text> : null}
-          </View>
-          <MaterialIcons name="chevron-right" size={20} color={colors.accent} />
-        </View>
-
-        <View style={styles.modeToggle} accessibilityRole="tablist">
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityState={{ selected: false }}
-            onPress={onVoiceCall}
-            disabled={!onVoiceCall}
-            style={styles.modeButton}
-          >
-            <Text style={styles.modeText}>Suara</Text>
-          </Pressable>
-          <View
-            accessibilityRole="tab"
-            accessibilityState={{ selected: true }}
-            style={[styles.modeButton, styles.modeButtonActive]}
-          >
-            <Text style={styles.modeTextActive}>Chat</Text>
-          </View>
-        </View>
-
-        <View style={[styles.dateRow, simple && styles.hidden]}>
-          <Text style={styles.dateText}>HARI INI</Text>
-        </View>
-
-        <View style={[styles.header, simple && styles.hidden]}>
           <View style={styles.identity}>
-            <View style={styles.avatar}>
-              <MaterialIcons name="grain" size={18} color={colors.primaryDark} />
-            </View>
-            <View>
-              <Text style={styles.title}>Chef Sorghum AI</Text>
-              <Text style={styles.subtitle}>Jawaban langsung dari RAG sorgum</Text>
-            </View>
+            <Text style={styles.title}>Chef Sorghum AI</Text>
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {streaming ? chatStatus : recipeMeta || 'Siap menemani memasak'}
+            </Text>
           </View>
           <Pressable
             accessibilityRole="switch"
@@ -346,6 +300,7 @@ export function AICompanion({
           </Pressable>
         </View>
 
+        {/* Balon pesan mengisi sisa tinggi layar. */}
         <ScrollView
           ref={scrollRef}
           style={styles.messages}
@@ -353,74 +308,80 @@ export function AICompanion({
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
-          {messages.length === 0 ? (
-            <View style={styles.tip}>
-              <Text style={styles.tipText}>
-                Tanyakan takaran, pengganti bahan, atau langkah yang belum jelas pada resep ini.
+          <View style={styles.messageRow}>
+            <View style={styles.avatarSmall}>
+              <MaterialIcons name="grain" size={13} color={colors.primary} />
+            </View>
+            <View style={[styles.bubble, styles.bubbleAssistant]}>
+              <Text style={styles.bubbleText}>
+                Halo! Saya dampingi dari sini. Tanyakan takaran, pengganti bahan, atau langkah yang
+                belum jelas pada resep ini.
               </Text>
             </View>
-          ) : (
-            messages.map((message, index) => (
-              <View
-                key={`${message.role}-${index}`}
-                style={[styles.messageRow, message.role === 'user' && styles.messageRowUser]}
-              >
-                {message.role === 'assistant' ? (
-                  <View style={styles.avatarSmall}>
-                    <MaterialIcons name="grain" size={13} color={colors.primary} />
-                  </View>
-                ) : null}
-                <View
-                  style={[
-                    styles.bubble,
-                    message.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant,
-                  ]}
-                >
-                  <Text
-                    style={[styles.bubbleText, message.role === 'user' && styles.bubbleTextUser]}
-                  >
-                    {message.content || '…'}
-                  </Text>
+          </View>
+
+          {messages.map((message, index) => (
+            <View
+              key={`${message.role}-${index}`}
+              style={[styles.messageRow, message.role === 'user' && styles.messageRowUser]}
+            >
+              {message.role === 'assistant' ? (
+                <View style={styles.avatarSmall}>
+                  <MaterialIcons name="grain" size={13} color={colors.primary} />
                 </View>
+              ) : null}
+              <View
+                style={[
+                  styles.bubble,
+                  message.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant,
+                ]}
+              >
+                <Text style={[styles.bubbleText, message.role === 'user' && styles.bubbleTextUser]}>
+                  {message.content || '…'}
+                </Text>
               </View>
-            ))
-          )}
+            </View>
+          ))}
+
           {streaming ? (
             <View style={styles.streamingRow} accessibilityLiveRegion="polite">
-              <ChefLoader size={64} accessibilityLabel="Chef AI sedang menyusun jawaban" />
+              <ChefLoader size={56} accessibilityLabel="Chef AI sedang menyusun jawaban" />
               <Text style={styles.streamLabel}>{chatStatus}</Text>
             </View>
           ) : null}
         </ScrollView>
 
-        <ScrollView
-          horizontal
-          style={simple ? styles.hidden : undefined}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.suggestions}
-          keyboardShouldPersistTaps="handled"
-        >
-          {SUGGESTIONS.map((suggestion) => (
-            <Pressable
-              key={suggestion}
-              onPress={() => send(suggestion)}
-              disabled={streaming}
-              style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
-            >
-              <Text style={styles.suggestionText}>{suggestion}</Text>
-            </Pressable>
-          ))}
-          {lastQuestion && !streaming ? (
-            <Pressable
-              onPress={() => send(lastQuestion)}
-              style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
-            >
-              <MaterialIcons name="refresh" size={14} color={colors.primary} />
-              <Text style={styles.suggestionText}>Ulangi</Text>
-            </Pressable>
-          ) : null}
-        </ScrollView>
+        {/* Saran singkat + ulangi pertanyaan terakhir. */}
+        <View style={styles.suggestionsWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.suggestionsContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {SUGGESTIONS.map((suggestion) => (
+              <Pressable
+                key={suggestion}
+                onPress={() => send(suggestion)}
+                disabled={streaming}
+                style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
+              >
+                <Text style={styles.suggestionText}>{suggestion}</Text>
+              </Pressable>
+            ))}
+            {lastQuestion && !streaming ? (
+              <Pressable
+                onPress={() => send(lastQuestion)}
+                style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
+              >
+                <MaterialIcons name="refresh" size={13} color={colors.primary} />
+                <Text style={styles.suggestionText}>Ulangi</Text>
+              </Pressable>
+            ) : null}
+          </ScrollView>
+        </View>
 
+        {/* Kolom tulis. */}
         <View style={styles.composer}>
           <TextInput
             accessibilityLabel="Pesan untuk pendamping resep"
@@ -480,115 +441,40 @@ export function AICompanion({
 }
 
 const styles = StyleSheet.create({
-  panel: {
+  flex: { flex: 1 },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
     backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: spacing.lg,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
-  panelCompact: { marginTop: spacing.sm },
-  hidden: { display: 'none' },
-  recipeCard: {
-    margin: spacing.md,
-    marginBottom: spacing.sm,
-    minHeight: 82,
-    borderRadius: radius.xl,
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderWidth: 1,
-    borderColor: colors.surfaceDarkAlt,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  recipeInitials: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceDarkAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  recipeInitialsText: { ...typography.h3, color: colors.accent, fontSize: 16 },
-  recipeCopy: { flex: 1, minWidth: 0 },
-  recipeBadge: { ...typography.label, color: colors.accent, fontSize: 9 },
-  recipeTitle: {
-    ...typography.bodySm,
-    color: colors.textOnPrimary,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  recipeMeta: { ...typography.caption, color: '#B8C5BB', marginTop: 2 },
-  modeToggle: {
-    marginHorizontal: spacing.md,
-    padding: 4,
-    borderRadius: radius.lg,
-    backgroundColor: colors.primary,
-    borderWidth: 1,
-    borderColor: colors.primaryDark,
-    flexDirection: 'row',
-  },
-  modeButton: {
-    flex: 1,
-    minHeight: 38,
-    borderRadius: radius.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  modeButtonActive: { backgroundColor: colors.accent },
-  modeText: { ...typography.caption, color: colors.textOnPrimary, fontWeight: '700' },
-  modeTextActive: { ...typography.caption, color: colors.primaryDark, fontWeight: '800' },
-  dateRow: { alignItems: 'center', paddingTop: spacing.md },
-  dateText: {
-    ...typography.label,
-    fontSize: 9,
-    color: colors.textMuted,
-    backgroundColor: colors.surfaceAlt,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-  },
-  header: {
-    minHeight: 68,
-    paddingHorizontal: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 0,
-  },
-  identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: { ...typography.h3, fontSize: 17, color: colors.text },
+  identity: { flex: 1, minWidth: 0 },
+  title: { ...typography.bodySm, color: colors.text, fontWeight: '800' },
   subtitle: { ...typography.caption, color: colors.textMuted },
   speakToggle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
   speakToggleOn: { backgroundColor: colors.accent },
-  messages: { maxHeight: 280, minHeight: 130 },
-  messagesContent: { padding: spacing.md },
-  tip: {
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent,
-    paddingLeft: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  tipText: { ...typography.bodySm, color: colors.textMuted, marginTop: 3 },
+  messages: { flex: 1 },
+  messagesContent: { padding: spacing.md, paddingBottom: spacing.lg },
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: spacing.sm },
   messageRowUser: { justifyContent: 'flex-end' },
   avatarSmall: {
@@ -617,13 +503,25 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   streamLabel: { ...typography.caption, color: colors.textMuted, flex: 1 },
-  suggestions: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
+  suggestionsWrap: {
+    height: 38,
+    marginVertical: 4,
+    justifyContent: 'center',
+  },
+  suggestionsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    gap: 8,
+  },
+  /** Saran dibuat ringkas supaya tidak memakan ruang layar HP. */
   suggestion: {
-    minHeight: 38,
+    height: 30,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     gap: 4,
     alignItems: 'center',
