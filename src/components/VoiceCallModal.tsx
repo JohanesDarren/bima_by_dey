@@ -14,10 +14,23 @@ interface Props {
   segment: Segment;
   recipeName?: string;
   stepLabel?: string;
+  recipeIngredients?: string;
 }
 
-export function VoiceCallModal({ visible, onClose, segment, recipeName, stepLabel }: Props) {
-  const { state, errorMsg, startCall, stopCall } = useVoiceCall(segment, recipeName, stepLabel);
+export function VoiceCallModal({
+  visible,
+  onClose,
+  segment,
+  recipeName,
+  stepLabel,
+  recipeIngredients,
+}: Props) {
+  const { state, errorMsg, startCall, stopCall } = useVoiceCall(
+    segment,
+    recipeName,
+    stepLabel,
+    recipeIngredients,
+  );
   const [muted, setMuted] = useState(false);
   // Status berputar selama Chef AI menyusun jawaban (selaras dengan layar memuat lain).
   const thinkingText = useLoadingNarration('voice', state === 'thinking', 1600);
