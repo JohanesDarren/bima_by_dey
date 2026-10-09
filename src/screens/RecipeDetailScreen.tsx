@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -58,36 +58,37 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
   const [retryKey, setRetryKey] = useState(0);
   const recipe = activeRecipe;
 
+  const fetchRecipe = useCallback(async () => {
+    if (!menu) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const loaded = await loadRecipe(menu, segment);
+      if (loaded) {
+        setLoadedRecipe(loaded);
+        return;
+      }
+      // Baca galat LANGSUNG dari store saat itu (bukan lewat state global yang
+      // bisa saja sudah ditimpa permintaan lain): pesannya jadi tepat.
+      setError(
+        useFlowStore.getState().recipeError ||
+          'Layanan resep tidak merespons. Coba lagi sebentar lagi.',
+      );
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menu?.name, segment.ageGroup, segment.condition, loadRecipe]);
+
   useEffect(() => {
     // Dari Browse: menu diberikan → ambil resep (bila store belum punya resep menu ini).
     if (!menu) return;
-    // Penjaga: hasil permintaan yang sudah tidak relevan (pengguna pindah menu atau
-    // menekan "Coba lagi") tidak boleh lagi menimpa layar.
-    let cancelled = false;
-    if (!storeRecipeIsThisMenu || retryKey > 0) {
-      setLoading(true);
-      setError(null);
-      loadRecipe(menu, segment)
-        .then((loaded) => {
-          if (cancelled) return;
-          if (loaded) {
-            setLoadedRecipe(loaded);
-            return;
-          }
-          setError(
-            useFlowStore.getState().recipeError ||
-              'Layanan resep tidak merespons. Coba lagi sebentar lagi.',
-          );
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    }
-    return () => {
-      cancelled = true;
-    };
+    if (!storeRecipeIsThisMenu || retryKey > 0) fetchRecipe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menu?.name, retryKey]);
+
+  /** "Coba lagi": naikkan retryKey supaya useEffect memicu pengambilan ulang. */
+  const retry = () => setRetryKey((value) => value + 1);
 
   // Tidak ada menu & tidak ada resep aktif (mis. deep-link rusak) → fallback.
   if (!menu && !recipe) {
@@ -121,14 +122,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
           <Text style={styles.centerText}>
             Jawaban hanya ditampilkan ketika layanan RAG tersedia.
           </Text>
-          <Button
-            title="Coba lagi"
-            onPress={() => {
-              setError(null);
-              setRetryKey((value) => value + 1);
-            }}
-            style={styles.retry}
-          />
+          <Button title="Coba lagi" onPress={retry} style={styles.retry} />
         </View>
       ) : displayRecipe ? (
         <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
@@ -193,14 +187,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
           <Text style={styles.centerText}>
             Layanan sedang tidak mengirim resep yang bisa dibaca. Coba lagi.
           </Text>
-          <Button
-            title="Coba lagi"
-            onPress={() => {
-              setError(null);
-              setRetryKey((value) => value + 1);
-            }}
-            style={styles.retry}
-          />
+          <Button title="Coba lagi" onPress={retry} style={styles.retry} />
         </View>
       )}
     </SafeAreaView>

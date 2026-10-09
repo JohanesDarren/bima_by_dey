@@ -10,7 +10,8 @@ import {
   AGE_GROUPS,
   isConditionAllowed,
   isUnder18,
-  MENU_COUNT,
+  MENU_BUTTON_LABEL,
+  MENU_MORE_BUTTON_LABEL,
   SPECIAL_CONDITIONS,
 } from '../constants';
 import { useAuthStore } from '../store/authStore';
@@ -163,7 +164,7 @@ export function BrowseScreen({ navigation }: Props) {
         </View>
 
         <Button
-          title={`Buat ${MENU_COUNT} menu`}
+          title={MENU_BUTTON_LABEL}
           onPress={() => generate(false)}
           disabled={!segmentReady || !category || loadingMenus}
           loading={loadingMenus && menus.length === 0}
@@ -209,7 +210,7 @@ export function BrowseScreen({ navigation }: Props) {
               />
             ))}
             <Button
-              title={`Buat ${MENU_COUNT} menu lainnya`}
+              title={MENU_MORE_BUTTON_LABEL}
               onPress={() => generate(true)}
               loading={loadingMenus}
               disabled={loadingMenus}

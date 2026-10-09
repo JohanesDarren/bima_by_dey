@@ -133,7 +133,7 @@ function promptSearchRecipe(seg: Segment, category: FoodCategory, excludedNames:
     `Kategori WAJIB: ${CATEGORY_LABEL[category]}. Menu harus termasuk kategori ini.`,
     'WAJIB pertimbangkan kelompok umur DAN kondisi khusus secara bersamaan.',
     excludedNames.length
-      ? `JANGAN memakai menu berikut: ${excludedNames.map((name) => `"${name}"`).join(', ')}.`
+      ? `JANGAN memakai menu berikut: ${excludedNames.map((name) => `"${name}"`).join(', ')}. Menu baru WAJIB beda — ganti bahan utama atau jenis sajiannya, jangan hanya ubah nama.`
       : '',
     'description: maksimal 2 kalimat pendek (sekitar 25 kata), tanpa tanda kurung dan tanpa angka persen.',
     'strengths dan weaknesses: maksimal 8 kata per butir.',
@@ -244,11 +244,14 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
 
   await Promise.all(Array.from({ length: target }, () => mintaSatu()));
 
-  // Masih kurang dari target (jawaban kembar atau satu permintaan gagal): isi
-  // sekali lagi — kecuali kegagalannya dari model di sisi server, karena mengulang
-  // saat itu hanya membuang waktu pengguna.
-  const adaKegagalanServer = errors.some((error) => error instanceof ServerSideError);
-  if (collected.size < target && !adaKegagalanServer) await mintaSatu();
+  // Masih kurang dari target (jawaban kembar atau satu permintaan gagal): isi lagi.
+  // Kembar itu kejadian biasa — model kadang mengulang menu yang sama walau sudah
+  // dilarang. Jadi beri sampai 3 putaran percobaan, TAPI berhenti segera bila
+  // kegagalannya dari model di sisi server (mengulang saat itu cuma buang waktu).
+  for (let putaran = 0; putaran < 2 && collected.size < target; putaran += 1) {
+    if (errors.some((error) => error instanceof ServerSideError)) break;
+    await mintaSatu();
+  }
 
   if (collected.size === 0) {
     const first = errors.find((error) => error instanceof ServerSideError) ?? errors[0];

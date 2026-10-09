@@ -22,12 +22,24 @@ export const isUnder18 = (ageGroup: AgeGroup | null): boolean =>
 
 /**
  * Berapa menu yang diminta sekali jalan. Tiap menu = SATU permintaan RAG terpisah
- * yang dijalankan bersamaan (server mengirim jawaban sekaligus di akhir, jadi satu
- * permintaan besar tidak bisa menampilkan hasil bertahap dan lebih rapuh).
+ * yang dijalankan bersamaan.
  * Dipakai oleh store (jumlah permintaan) DAN layar (teks tombol) supaya tidak
  * terpisah-pisah dan lupa disamakan saat diubah.
+ *
+ * Diset 1: satu permintaan = satu menu. Kalau diminta lebih dari satu, permintaan
+ * berangkat BERSAMAAN dengan daftar larangan yang masih kosong, jadi promptnya
+ * identik — model sering mengembalikan menu yang sama dan penyaring kembar
+ * menyisakannya jadi satu saja. Ingin menu lain? Tekan "Buat menu lainnya".
  */
-export const MENU_COUNT = 2;
+export const MENU_COUNT: number = 1;
+
+/**
+ * Teks tombol, menyesuaikan jumlah menu. Dipisah supaya saat jumlahnya 1 tidak
+ * terbaca janggal ("Buat 1 menu") dan saat diubah lagi labelnya ikut menyesuaikan.
+ */
+export const MENU_BUTTON_LABEL = MENU_COUNT === 1 ? 'Buat menu' : `Buat ${MENU_COUNT} menu`;
+export const MENU_MORE_BUTTON_LABEL =
+  MENU_COUNT === 1 ? 'Buat menu lainnya' : `Buat ${MENU_COUNT} menu lainnya`;
 
 /** Pesan saat RAG tidak menghasilkan menu baru. Satu sumber, dipakai layanan & store. */
 export const NO_NEW_MENU_MESSAGE = 'RAG belum menghasilkan menu baru. Coba lagi.';

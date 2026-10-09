@@ -13,3 +13,9 @@ export const KROOMBOX_API_KEY =
 
 /** Endpoint streaming chat. */
 export const KROOMBOX_CHAT_ENDPOINT = '/api/chat';
+
+/**
+ * Endpoint kesehatan ringan. Dipakai sebagai denyut (heartbeat) selagi menunggu
+ * jawaban panjang, supaya sesi di sisi server tetap dianggap aktif.
+ */
+export const KROOMBOX_HEALTH_ENDPOINT = '/api/health';

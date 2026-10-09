@@ -1,5 +1,25 @@
 import EventSource from 'react-native-sse';
-import { KROOMBOX_API_KEY, KROOMBOX_BASE_URL, KROOMBOX_CHAT_ENDPOINT } from '../lib/kroomboxConfig';
+import {
+  KROOMBOX_API_KEY,
+  KROOMBOX_BASE_URL,
+  KROOMBOX_CHAT_ENDPOINT,
+  KROOMBOX_HEALTH_ENDPOINT,
+} from '../lib/kroomboxConfig';
+
+/**
+ * Pengatur waktu permintaan RAG (ms).
+ *
+ * IDLE: jeda tanpa data sama sekali sebelum menyerah. DIHITUNG ULANG tiap ada data
+ *   masuk — bukan satu dinding datar dari awal. 400s dipilih dari pengukuran: permintaan
+ *   resep TERUKUR pernah memakan 195-234 detik, jadi batas ini hanya terpakai saat
+ *   server benar-benar lambat/sepi.
+ * TOTAL: jaring pengaman agar permintaan tak menggantung selamanya walau data menetes
+ *   terus tanpa pernah lengkap.
+ * HEARTBEAT: jeda antar-denyut ke /api/health selagi menunggu (sesi server tetap aktif).
+ */
+const IDLE_TIMEOUT_MS = 400_000;
+const TOTAL_TIMEOUT_MS = 900_000;
+const HEARTBEAT_INTERVAL_MS = 25_000;
 
 export interface StreamHandlers {
   /** text chunk dari delta stream */
@@ -282,23 +302,57 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
     let text = '';
     let settled = false;
     let stream: ReturnType<typeof streamKroomboxChat> | null = null;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let totalTimer: ReturnType<typeof setTimeout> | null = null;
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+    const stopTimers = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      if (totalTimer) clearTimeout(totalTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+    };
+
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeout);
+      stopTimers();
       stream?.close();
       callback();
     };
-    const timeout = setTimeout(
-      () =>
-        finish(() => reject(new KroomboxError('Layanan RAG terlalu lama merespons. Coba lagi.'))),
-      // 330s (dulu 240s, awalnya 180s): permintaan resep TERUKUR pernah memakan 195-234
-      // detik. Batas 240 detik terlalu mepet — permintaan yang datanya sebenarnya sudah
-      // jadi dibunuh beberapa detik sebelum selesai, lalu pengguna melihat kegagalan.
-      // Kelebihan ini hanya dipakai saat server benar-benar lambat; jalur cepat tidak
-      // terpengaruh karena sambungan tetap ditutup begitu JSON lengkap terbaca.
-      330_000,
+
+    const fail = (message: string) => finish(() => reject(new KroomboxError(message)));
+
+    // Pengatur waktu "tidak ada data": DIHITUNG ULANG setiap ada data masuk, jadi
+    // tidak lagi satu dinding datar dari awal. Selama server masih mengirim, permintaan
+    // tidak dibunuh — kasus "data hampir lengkap lalu keburu diputus" hilang.
+    const armIdle = () => {
+      if (settled) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(
+        () => fail('Layanan RAG terlalu lama tidak mengirim data. Coba lagi.'),
+        IDLE_TIMEOUT_MS,
+      );
+    };
+
+    // Jaring pengaman: batas total walau data menetes terus tanpa pernah lengkap.
+    totalTimer = setTimeout(
+      () => fail('Jawaban RAG tidak kunjung lengkap. Coba lagi.'),
+      TOTAL_TIMEOUT_MS,
     );
+
+    // Denyut: panggil /api/health berkala supaya sesi di sisi server tetap dianggap
+    // aktif selagi menunggu jawaban panjang. Jalur terpisah dari aliran jawaban, jadi
+    // tidak menyentuh isinya; kegagalan denyut diabaikan dan tidak menjatuhkan permintaan.
+    heartbeatTimer = setInterval(() => {
+      if (settled) return;
+      fetch(`${KROOMBOX_BASE_URL}${KROOMBOX_HEALTH_ENDPOINT}`, {
+        headers: { 'X-API-Key': KROOMBOX_API_KEY },
+      }).catch(() => {
+        /* denyut gagal ≠ permintaan gagal */
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+
+    armIdle();
 
     try {
       stream = streamKroomboxChat(
@@ -307,11 +361,13 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
           onToken: (token) => {
             text += token;
             if (settled) return;
+            armIdle();
             // Data yang kita butuhkan sudah lengkap → tutup sekarang, jangan tunggu
             // server selesai menulis prosa tambahan.
             const ready = completeJsonSlice(text);
             if (ready) finish(() => resolve(ready));
           },
+          onSources: () => armIdle(),
           onDone: () =>
             finish(() => {
               if (!text.trim()) {

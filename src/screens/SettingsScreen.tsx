@@ -79,7 +79,7 @@ export function SettingsScreen({ navigation }: Props) {
 
         <View style={styles.card}>
           <Text style={styles.infoText}>
-            sorgumcore v{Constants.expoConfig?.version ?? '1.7.0'}
+            sorgumcore v{Constants?.expoConfig?.version ?? '1.7.0'}
           </Text>
           <Text style={styles.infoSub}>Sorghum AI Nutritionist — prototype akademik</Text>
         </View>

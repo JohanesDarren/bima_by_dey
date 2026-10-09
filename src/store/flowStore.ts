@@ -59,7 +59,11 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   generateMenus: async (segment, category, append = false) => {
     const requestId = ++menuRequestId;
     const previous = append ? get().menus : [];
-    set({ loadingMenus: true, menusError: null, ...(append ? {} : { menus: [] }) });
+    // PENTING: menu lama TIDAK dikosongkan di awal. Dulu `menus: []` dipasang di sini,
+    // jadi ketika permintaan baru gagal, menu yang tadinya sudah tampil ikut hilang dan
+    // pengguna melihat "Menu belum bisa dimuat" padahal sebelumnya baik-baik saja.
+    // Sekarang daftar baru dipasang hanya setelah hasilnya benar-benar berhasil.
+    set({ loadingMenus: true, menusError: null });
     try {
       const generated = await searchRecipes({
         segment,
@@ -79,6 +83,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     } catch (e) {
       if (requestId !== menuRequestId) return;
       const message = (e as Error)?.message?.trim() || NO_NEW_MENU_MESSAGE;
+      // Menu lama dibiarkan utuh: yang gagal cuma permintaan barunya.
       set({ loadingMenus: false, menusError: message });
     }
   },
