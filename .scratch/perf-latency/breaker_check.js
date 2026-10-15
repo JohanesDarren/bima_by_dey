@@ -1,8 +1,37 @@
 /**
  * Uji perilaku state machine pemutus arus (bukan sekadar tipe).
- * Dijalankan dengan `node breaker_check.js` setelah breaker.ts dikompilasi.
+ * Dijalankan dengan `node .scratch/perf-latency/breaker_check.js` dari akar repo.
+ * Mengompilasi sendiri sumbernya bila belum ada, supaya tidak butuh artefak ter-commit.
  */
-const { CircuitBreaker, CircuitOpenError } = require('./breaker-check/breaker.js');
+const { execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const REPO = path.resolve(__dirname, '..', '..');
+const OUT_DIR = path.join(__dirname, 'breaker-check');
+const COMPILED = path.join(OUT_DIR, 'breaker.js');
+
+if (!fs.existsSync(COMPILED)) {
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  execFileSync(
+    'npx',
+    [
+      'tsc',
+      path.join(REPO, 'src', 'services', 'breaker.ts'),
+      '--ignoreConfig',
+      '--outDir',
+      OUT_DIR,
+      '--module',
+      'commonjs',
+      '--target',
+      'es2019',
+      '--skipLibCheck',
+    ],
+    { cwd: REPO, stdio: 'inherit' },
+  );
+}
+
+const { CircuitBreaker, CircuitOpenError } = require(COMPILED);
 
 let failures = 0;
 const check = (label, actual, expected) => {

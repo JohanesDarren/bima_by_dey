@@ -45,6 +45,9 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# hasil kompilasi sementara uji .scratch
+.scratch/**/breaker-check/
+
 # generated native folders
 /ios
 /android
