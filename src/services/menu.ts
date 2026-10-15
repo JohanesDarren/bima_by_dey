@@ -2,9 +2,11 @@ import {
   chatKroombox,
   extractJson,
   extractJsonArray,
+  KroomboxTimeoutError,
   serverFailureText,
   ServerSideError,
 } from './kroombox';
+import { CircuitOpenError } from './breaker';
 import { normalizeRecipeResponse } from './recipeNormalizer';
 import { getCachedMenus, getCachedRecipe, setCachedMenus, setCachedRecipe } from './cache';
 import type { FoodCategory, MenuItem, Recipe, RecipeRequest, Segment } from '../types';
@@ -165,7 +167,7 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
 
   const r = await chatKroombox({
     message: promptRecipe(menuName, seg),
-    useRag: true,
+    useRag: false,
     maxTokens: RECIPE_MAX_TOKENS,
   });
   // Model di sisi server tumbang → berhenti dengan pesan jujur.
@@ -222,7 +224,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
           ...excluded,
           ...[...collected.values()].map((menu) => menu.name),
         ]),
-        useRag: true,
+        useRag: false,
         maxTokens: MENU_MAX_TOKENS,
       });
       // Model di sisi server tumbang → berhenti sekarang, jangan ulang.
@@ -246,10 +248,21 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
 
   // Masih kurang dari target (jawaban kembar atau satu permintaan gagal): isi lagi.
   // Kembar itu kejadian biasa — model kadang mengulang menu yang sama walau sudah
-  // dilarang. Jadi beri sampai 3 putaran percobaan, TAPI berhenti segera bila
-  // kegagalannya dari model di sisi server (mengulang saat itu cuma buang waktu).
+  // dilarang. Jadi beri sampai 2 putaran percobaan, TAPI berhenti segera bila
+  // kegagalannya dari model di sisi server ATAU karena waktu habis: mengulang saat
+  // server macet cuma menambah ~1 menit tunggu per putaran tanpa menambah peluang
+  // berhasil (terukur: server yang macet tetap 0 token pada percobaan berikutnya).
   for (let putaran = 0; putaran < 2 && collected.size < target; putaran += 1) {
-    if (errors.some((error) => error instanceof ServerSideError)) break;
+    if (
+      errors.some(
+        (error) =>
+          error instanceof ServerSideError ||
+          error instanceof KroomboxTimeoutError ||
+          error instanceof CircuitOpenError,
+      )
+    ) {
+      break;
+    }
     await mintaSatu();
   }
 

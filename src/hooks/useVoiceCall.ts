@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
 import { serverFailureText, streamKroomboxChat, type HistoryEntry } from '../services/kroombox';
+import { CircuitOpenError } from '../services/breaker';
 import { VOICE_MAX_WORDS, cleanAssistantText } from '../utils/assistantText';
 import { VOICE_HISTORY_LIMIT, VOICE_PERSONA, VOICE_RULES } from '../utils/chefPrompt';
 import type { Segment } from '../types';
@@ -136,7 +137,7 @@ export function useVoiceCall(
           ].join('\n'),
           // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
           history: historyRef.current,
-          useRag: true,
+          useRag: false,
           // Kuota token keluaran (dipungut dari versi upstream); 150 ≈ 3x batas 25 kata.
           maxTokens: 150,
         },
@@ -186,7 +187,11 @@ export function useVoiceCall(
             if (!activeRef.current) return;
             processingRef.current = false;
             setState('error');
-            setErrorMsg('Koneksi ke pendamping resep terganggu. Coba lagi.');
+            setErrorMsg(
+              error instanceof CircuitOpenError
+                ? error.message
+                : 'Koneksi ke pendamping resep terganggu. Coba lagi.',
+            );
           },
         },
       );

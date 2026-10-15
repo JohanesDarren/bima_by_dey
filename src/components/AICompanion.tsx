@@ -15,6 +15,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 import { serverFailureText, streamKroomboxChat } from '../services/kroombox';
+import { CircuitOpenError } from '../services/breaker';
 import { CHAT_MAX_WORDS, CHAT_LOADING_STAGES, cleanAssistantText } from '../utils/assistantText';
 import { buildChefHistory, buildChefMessage } from '../utils/chefPrompt';
 
@@ -115,7 +116,7 @@ export function AICompanion({
           message: buildChefMessage(context, text),
           // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
           history: buildChefHistory(messages),
-          useRag: true,
+          useRag: false,
           // Kuota token keluaran (dipungut dari versi upstream). 250 ≈ 3x batas 30 kata
           // kita, jadi longgar untuk jawaban benar dan hanya memotong yang berlarut.
           maxTokens: 250,
@@ -160,7 +161,7 @@ export function AICompanion({
               return [...current.slice(0, -1), { ...last, content: clean }];
             });
           },
-          onError: () => {
+          onError: (error) => {
             setStreaming(false);
             streamRef.current = null;
             setMessages((current) => {
@@ -171,7 +172,12 @@ export function AICompanion({
                 ...next,
                 {
                   role: 'assistant',
-                  content: 'Koneksi terputus. Coba kirim lagi.',
+                  // Pemutus arus terbuka: jangan bilang "koneksi terputus" (menyesatkan) —
+                  // katakan apa adanya bahwa layanan sedang bermasalah.
+                  content:
+                    error instanceof CircuitOpenError
+                      ? error.message
+                      : 'Koneksi terputus. Coba kirim lagi.',
                   reasoning_content: null,
                 },
               ];

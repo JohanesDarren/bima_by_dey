@@ -1,25 +1,43 @@
 import EventSource from 'react-native-sse';
-import {
-  KROOMBOX_API_KEY,
-  KROOMBOX_BASE_URL,
-  KROOMBOX_CHAT_ENDPOINT,
-  KROOMBOX_HEALTH_ENDPOINT,
-} from '../lib/kroomboxConfig';
+import { KROOMBOX_API_KEY, KROOMBOX_BASE_URL, KROOMBOX_CHAT_ENDPOINT } from '../lib/kroomboxConfig';
+import { CircuitBreaker, CircuitOpenError } from './breaker';
 
 /**
  * Pengatur waktu permintaan RAG (ms).
  *
  * IDLE: jeda tanpa data sama sekali sebelum menyerah. DIHITUNG ULANG tiap ada data
- *   masuk — bukan satu dinding datar dari awal. 400s dipilih dari pengukuran: permintaan
- *   resep TERUKUR pernah memakan 195-234 detik, jadi batas ini hanya terpakai saat
- *   server benar-benar lambat/sepi.
+ *   masuk — bukan satu dinding datar dari awal. 60s dipilih supaya kegagalan terasa
+ *   cepat: server yang benar-benar macet (terukur: 0 token selama >6 menit) tidak lagi
+ *   menahan pengguna berjam-jam. Server yang lambat TAPI mengalir tetap aman karena
+ *   timer ini di-reset setiap ada data masuk.
  * TOTAL: jaring pengaman agar permintaan tak menggantung selamanya walau data menetes
  *   terus tanpa pernah lengkap.
- * HEARTBEAT: jeda antar-denyut ke /api/health selagi menunggu (sesi server tetap aktif).
+ *
+ * CATATAN: denyut /api/health berkala (dulu 25s) sudah DIHAPUS. Terukur bahwa server
+ * yang macet berhenti di tahap pembangkitan LLM, dan denyut ke /api/health tidak
+ * menghidupkannya kembali — jadi itu hanya menambah beban ke server mitra tanpa manfaat.
  */
-const IDLE_TIMEOUT_MS = 400_000;
-const TOTAL_TIMEOUT_MS = 900_000;
-const HEARTBEAT_INTERVAL_MS = 25_000;
+const IDLE_TIMEOUT_MS = 60_000;
+const TOTAL_TIMEOUT_MS = 300_000;
+
+/**
+ * Batas idle untuk jalur streaming MENTAH (chat teks & panggilan suara), yang tidak
+ * lewat collectKroomboxStream. Tanpa ini, kedua jalur itu menunggu selamanya saat
+ * server berhenti mengirim data.
+ */
+export const CHAT_IDLE_TIMEOUT_MS = 60_000;
+
+/**
+ * Pemutus arus bersama untuk SELURUH permintaan AI (menu, resep, chat, suara) —
+ * semuanya bermuara ke satu endpoint /api/chat, jadi satu pemutus cukup.
+ *
+ * Ketika server sedang macet (terukur: 0 token selama >6 menit), tiga kegagalan
+ * berturut-turut membuka pemutus selama 60 detik: permintaan berikutnya gagal
+ * SEKETIKA tanpa menunggu timeout penuh dan tanpa menambah beban ke server yang
+ * sedang tumbang. Setelah 60 detik, satu permintaan percobaan dikirim untuk
+ * menguji apakah server sudah pulih.
+ */
+export const chatBreaker = new CircuitBreaker({ failureThreshold: 3, openMs: 60_000 });
 
 export interface StreamHandlers {
   /** text chunk dari delta stream */
@@ -73,7 +91,21 @@ function isDoneLine(raw: string): boolean {
  *
  * Autentikasi via header X-API-Key (bukan bearer).
  */
-export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers) {
+export function streamKroomboxChat(
+  req: StreamRequest,
+  handlers: StreamHandlers,
+): { close: () => void } {
+  // Pemutus arus: kalau server sedang macet (OPEN), JANGAN kirim sama sekali —
+  // gagalkan seketika supaya pengguna tidak menunggu 60 detik untuk hal yang pasti
+  // gagal, dan server yang sudah tumbang tidak ditambah beban.
+  if (!chatBreaker.canPass()) {
+    const denied = new CircuitOpenError(
+      'Layanan AI sedang bermasalah. Tunggu sebentar, lalu coba lagi.',
+    );
+    setTimeout(() => handlers.onError(denied), 0);
+    return { close: () => undefined };
+  }
+
   const url = `${KROOMBOX_BASE_URL}${KROOMBOX_CHAT_ENDPOINT}`;
   const es = new EventSource(url, {
     method: 'POST',
@@ -85,7 +117,10 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
       message: req.message,
       history: req.history ?? [],
       model: req.model ?? null,
-      useRag: req.useRag ?? true,
+      // Default MATI: retrieval di sisi server terbukti tidak relevan untuk app ini
+      // (sumber terukur skor ≈0.005, +3-13 detik per permintaan). Nyalakan hanya bila
+      // pemanggil memang memintanya secara eksplisit.
+      useRag: req.useRag ?? false,
       // Selalu streaming: jawaban RAG terstruktur bisa makan 1-4 menit, dan
       // sambungan SSE menjaga proxy tetap hidup (menghindari 502 gateway).
       stream: true,
@@ -99,21 +134,46 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
   // datang sesudah [DONE] terbaca sebagai kegagalan palsu.
   let settled = false;
   let receivedDelta = false;
+  // Pengawas "tidak ada data": jalur ini (chat teks & panggilan suara) dulu menunggu
+  // selamanya saat server berhenti mengirim. Timer DIHITUNG ULANG tiap ada pesan masuk,
+  // jadi jawaban yang mengalir lambat tetap aman; hanya kesepian >60s yang diputus.
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const clearIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = null;
+  };
+  const armIdle = () => {
+    clearIdle();
+    if (settled) return;
+    idleTimer = setTimeout(
+      () => fail(new KroomboxTimeoutError('Layanan tidak mengirim data terlalu lama. Coba lagi.')),
+      CHAT_IDLE_TIMEOUT_MS,
+    );
+  };
   const done = () => {
     if (settled) return;
     settled = true;
+    clearIdle();
+    // Jawaban lengkap → server sehat; pemutus kembali normal.
+    chatBreaker.onSuccess();
     handlers.onDone();
     es.close();
   };
   const fail = (error: Error) => {
     if (settled) return;
     settled = true;
+    clearIdle();
+    // Server tak menjawab / error → hitung sebagai kegagalan layanan.
+    chatBreaker.onFailure();
     handlers.onError(error);
     es.close();
   };
 
+  armIdle();
+
   es.addEventListener('message', (event) => {
     if (settled || !event.data) return;
+    armIdle();
     const raw = event.data;
 
     // Penanda selesai: data: [DONE]
@@ -174,7 +234,15 @@ export function streamKroomboxChat(req: StreamRequest, handlers: StreamHandlers)
     fail(new KroomboxError(reason));
   });
 
-  return es;
+  // Pembungkus: menutup koneksi atas permintaan pengguna (tombol berhenti / panggilan
+  // ditutup) BUKAN kegagalan layanan — lepaskan slot uji half-open supaya pemutus
+  // tidak macet selamanya.
+  return {
+    close: () => {
+      if (!settled) chatBreaker.onAbort();
+      es.close();
+    },
+  };
 }
 
 /** Klasifikasi error sederhana untuk chat store. */
@@ -182,6 +250,19 @@ export class KroomboxError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'KroomboxError';
+  }
+}
+
+/**
+ * Permintaan berhenti karena server tidak mengirim data (idle) atau tidak kunjung
+ * lengkap (total). Dipisahkan dari KroomboxError biasa supaya pemanggil bisa
+ * memutus rantai percobaan otomatis: mengulang saat server macet cuma membuang waktu
+ * pengguna, bukan menambah peluang berhasil.
+ */
+export class KroomboxTimeoutError extends KroomboxError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'KroomboxTimeoutError';
   }
 }
 
@@ -304,12 +385,10 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
     let stream: ReturnType<typeof streamKroomboxChat> | null = null;
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
     let totalTimer: ReturnType<typeof setTimeout> | null = null;
-    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
     const stopTimers = () => {
       if (idleTimer) clearTimeout(idleTimer);
       if (totalTimer) clearTimeout(totalTimer);
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
     };
 
     const finish = (callback: () => void) => {
@@ -320,7 +399,14 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
       callback();
     };
 
-    const fail = (message: string) => finish(() => reject(new KroomboxError(message)));
+    const fail = (message: string, TimeoutError = false) => {
+      // Waktu habis = layanan gagal. Catat ke pemutus SEBELUM menutup stream: jalur
+      // penutupan lewat close() hanya melepas slot uji half-open, bukan menghitung gagal.
+      if (TimeoutError) chatBreaker.onFailure();
+      finish(() =>
+        reject(TimeoutError ? new KroomboxTimeoutError(message) : new KroomboxError(message)),
+      );
+    };
 
     // Pengatur waktu "tidak ada data": DIHITUNG ULANG setiap ada data masuk, jadi
     // tidak lagi satu dinding datar dari awal. Selama server masih mengirim, permintaan
@@ -329,28 +415,16 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
       if (settled) return;
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(
-        () => fail('Layanan RAG terlalu lama tidak mengirim data. Coba lagi.'),
+        () => fail('Layanan RAG terlalu lama tidak mengirim data. Coba lagi.', true),
         IDLE_TIMEOUT_MS,
       );
     };
 
     // Jaring pengaman: batas total walau data menetes terus tanpa pernah lengkap.
     totalTimer = setTimeout(
-      () => fail('Jawaban RAG tidak kunjung lengkap. Coba lagi.'),
+      () => fail('Jawaban RAG tidak kunjung lengkap. Coba lagi.', true),
       TOTAL_TIMEOUT_MS,
     );
-
-    // Denyut: panggil /api/health berkala supaya sesi di sisi server tetap dianggap
-    // aktif selagi menunggu jawaban panjang. Jalur terpisah dari aliran jawaban, jadi
-    // tidak menyentuh isinya; kegagalan denyut diabaikan dan tidak menjatuhkan permintaan.
-    heartbeatTimer = setInterval(() => {
-      if (settled) return;
-      fetch(`${KROOMBOX_BASE_URL}${KROOMBOX_HEALTH_ENDPOINT}`, {
-        headers: { 'X-API-Key': KROOMBOX_API_KEY },
-      }).catch(() => {
-        /* denyut gagal ≠ permintaan gagal */
-      });
-    }, HEARTBEAT_INTERVAL_MS);
 
     armIdle();
 
@@ -365,7 +439,11 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
             // Data yang kita butuhkan sudah lengkap → tutup sekarang, jangan tunggu
             // server selesai menulis prosa tambahan.
             const ready = completeJsonSlice(text);
-            if (ready) finish(() => resolve(ready));
+            if (ready) {
+              // Data lengkap = server sehat; pastikan pemutus ikut kembali normal.
+              chatBreaker.onSuccess();
+              finish(() => resolve(ready));
+            }
           },
           onSources: () => armIdle(),
           onDone: () =>
@@ -381,6 +459,9 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
       );
       if (settled) stream.close();
     } catch (error) {
+      // Gagal MEMULAI stream (bukan timeout) juga berarti layanan tidak melayani —
+      // hitung sebagai kegagalan supaya pemutus tetap belajar dari kasus ini.
+      chatBreaker.onFailure();
       finish(() =>
         reject(error instanceof Error ? error : new KroomboxError('Layanan RAG gagal dimulai.')),
       );
