@@ -3,58 +3,25 @@
  * balasan model (ai/json) dan taksonomi kegagalan (ai/failures).
  *
  * Dijalankan dengan `npm test` (atau `node --test tests/`). Kedua module itu tidak
- * mengimpor apa pun, jadi skrip ini mengompilasinya sendiri ke tests/.compiled —
- * tidak butuh test runner pihak ketiga, sama seperti .scratch/perf-latency/breaker_check.js.
+ * mengimpor apa pun, jadi skrip ini mengompilasinya sendiri lewat tests/compileForTest.mjs
+ * — tidak butuh test runner pihak ketiga, sama seperti .scratch/perf-latency/breaker_check.js.
  */
-import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { compileForTest } from './compileForTest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO = path.resolve(HERE, '..');
 const OUT = path.join(HERE, '.compiled');
 
-const SOURCES = [
-  path.join(REPO, 'src', 'services', 'ai', 'json.ts'),
-  path.join(REPO, 'src', 'services', 'ai', 'failures.ts'),
-];
+const require = compileForTest({
+  sources: ['src/services/ai/json.ts', 'src/services/ai/failures.ts'],
+  outDir: OUT,
+});
 
-// Kompilasi ulang bila salah satu sumber lebih baru dari hasil sebelumnya.
-const newest = Math.max(...SOURCES.map((s) => fs.statSync(s).mtimeMs));
-const marker = path.join(OUT, '.stamp');
-const fresh = fs.existsSync(marker) && Number(fs.readFileSync(marker, 'utf8')) >= newest;
-
-if (!fresh) {
-  fs.rmSync(OUT, { recursive: true, force: true });
-  fs.mkdirSync(OUT, { recursive: true });
-  execFileSync(
-    'npx',
-    [
-      'tsc',
-      ...SOURCES,
-      '--ignoreConfig',
-      '--rootDir',
-      REPO,
-      '--outDir',
-      OUT,
-      '--module',
-      'esnext',
-      '--target',
-      'es2020',
-      '--moduleResolution',
-      'bundler',
-      '--skipLibCheck',
-    ],
-    { cwd: REPO, stdio: 'inherit' },
-  );
-  fs.writeFileSync(marker, String(Date.now()));
-}
-
-const { completeJsonSlice, extractJson, extractJsonArray } = await import(
-  path.join(OUT, 'src', 'services', 'ai', 'json.js')
+const { completeJsonSlice, extractJson, extractJsonArray } = require(
+  path.join(OUT, 'src', 'services', 'ai', 'json.js'),
 );
 const {
   serverFailureText,
@@ -62,7 +29,7 @@ const {
   KroomboxError,
   KroomboxTimeoutError,
   ServerSideError,
-} = await import(path.join(OUT, 'src', 'services', 'ai', 'failures.js'));
+} = require(path.join(OUT, 'src', 'services', 'ai', 'failures.js'));
 
 // ---------------------------------------------------------------------------
 // completeJsonSlice — berhenti lebih awal saat JSON sudah utuh

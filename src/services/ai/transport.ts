@@ -7,6 +7,13 @@ import {
 import { CircuitBreaker, CircuitOpenError } from '../breaker';
 import { completeJsonSlice } from './json';
 import { humanizeTransportReason, KroomboxError, KroomboxTimeoutError } from './failures';
+import type { StreamHandlers, StreamRequest } from './types';
+
+// Bentuk data AI hidup di ./types supaya module murni (giliran percakapan) bisa
+// bergantung padanya tanpa menyeret react-native-sse. StreamRequest & StreamHandlers
+// ikut diekspor ulang di sini karena keduanya bagian dari tanda tangan fungsi publik
+// transport ini; HistoryEntry tidak (pemakainya mengimpor langsung dari ./types).
+export type { StreamHandlers, StreamRequest } from './types';
 
 /**
  * Pengatur waktu permintaan RAG (ms).
@@ -44,37 +51,6 @@ const CHAT_IDLE_TIMEOUT_MS = 60_000;
  * menguji apakah server sudah pulih.
  */
 export const chatBreaker = new CircuitBreaker({ failureThreshold: 3, openMs: 60_000 });
-
-export interface StreamHandlers {
-  /** text chunk dari delta stream */
-  onToken: (text: string) => void;
-  /** selesai stream */
-  onDone: (finishReason?: string) => void;
-  /** error jaringan/API */
-  onError: (err: Error) => void;
-  /** sumber RAG (kalau dikirim event pertama {"sources": [...]}) */
-  onSources?: (sources: unknown[]) => void;
-}
-
-export interface HistoryEntry {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-export interface StreamRequest {
-  /** pesan terbaru user */
-  message: string;
-  /** riwayat chat (role: user/assistant) untuk konteks */
-  history?: HistoryEntry[];
-  model?: string | null;
-  useRag?: boolean;
-  /**
-   * Batas token keluaran (dipungut dari versi upstream). Berguna sebagai jaring terhadap
-   * jawaban yang berlarut-larut: panjang keluaran ≈ lama proses. Nilainya sengaja
-   * longgar — dipasang ketat, JSON resep bisa terpotong dan malah minta ulang.
-   */
-  maxTokens?: number;
-}
 
 interface StreamChunk {
   delta?: string;

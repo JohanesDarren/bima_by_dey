@@ -15,8 +15,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/ai/transport';
-import { CircuitOpenError } from '../services/breaker';
-import { readAssistantReply } from '../services/assistantReply';
+import { runConversationTurn } from '../services/ai/conversationTurn';
 import { CHAT_MAX_WORDS, CHAT_LOADING_STAGES } from '../utils/assistantText';
 import { buildChefHistory, buildChefMessage } from '../utils/chefPrompt';
 
@@ -108,77 +107,69 @@ export function AICompanion({
         { role: 'assistant', content: '' },
       ]);
       setStreaming(true);
-      let assistantText = '';
 
-      streamRef.current = streamKroomboxChat(
+      const writeLastAssistant = (content: string) => {
+        setMessages((current) => {
+          const next = [...current];
+          const last = next[next.length - 1];
+          if (last?.role === 'assistant') next[next.length - 1] = { ...last, content };
+          return next;
+        });
+      };
+
+      // Urutan satu giliran (kirim → kumpulkan → baca balasan → galat → riwayat) hidup
+      // di module giliran percakapan; komponen ini hanya mengurus tampilan.
+      const turn = runConversationTurn(
         {
           // Susunan pesan (persona + konteks + aturan dasar upstream + tambahan kita +
           // pertanyaan di ujung) ada di chefPrompt.ts supaya aturannya satu tempat.
-          message: buildChefMessage(context, text),
+          prompt: buildChefMessage(context, text),
+          question: text,
           // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
           history: buildChefHistory(messages),
           // Kuota token keluaran (dipungut dari versi upstream). 250 ≈ 3x batas 30 kata
           // kita, jadi longgar untuk jawaban benar dan hanya memotong yang berlarut.
           maxTokens: 250,
+          maxWords: CHAT_MAX_WORDS,
         },
+        streamKroomboxChat,
         {
-          onToken: (delta) => {
-            assistantText += delta;
-            // Kalau server mengirim pesan kegagalannya sendiri, tampilkan kalimat
-            // jujurnya — jangan biarkan teks teknis "Error code: 503 …" jadi balon jawaban.
-            const reply = readAssistantReply(assistantText, { maxWords: CHAT_MAX_WORDS });
-            setMessages((current) => {
-              const next = [...current];
-              const last = next[next.length - 1];
-              if (last?.role === 'assistant') {
-                next[next.length - 1] = { ...last, content: reply.text };
-              }
-              return next;
-            });
-          },
-          onDone: () => {
-            setStreaming(false);
-            streamRef.current = null;
-            setMessages((current) => {
-              const last = current[current.length - 1];
-              if (last?.role !== 'assistant') return current;
-              // Server menutup koneksi tanpa satu pun potongan jawaban. Jangan
-              // biarkan balon KOSONG menggantung — pengguna merasa tidak dijawab
-              // dan tidak tahu kenapa. Katakan apa adanya.
-              const reply = readAssistantReply(last.content, {
-                maxWords: CHAT_MAX_WORDS,
-                emptyMessage: 'Layanan tidak mengirim jawaban. Coba kirim lagi.',
-              });
-              if (reply.kind === 'text') {
-                if (autoSpeak) speak(reply.text);
-                onAssistantMessage?.(reply.text);
-              }
-              return [...current.slice(0, -1), { ...last, content: reply.text }];
-            });
-          },
-          onError: (error) => {
-            setStreaming(false);
-            streamRef.current = null;
-            setMessages((current) => {
-              const next = [...current];
-              const last = next[next.length - 1];
-              if (last?.role === 'assistant' && !last.content) next.pop();
-              return [
-                ...next,
-                {
-                  role: 'assistant',
-                  // Pemutus arus terbuka: jangan bilang "koneksi terputus" (menyesatkan) —
-                  // katakan apa adanya bahwa layanan sedang bermasalah.
-                  content:
-                    error instanceof CircuitOpenError
-                      ? error.message
-                      : 'Koneksi terputus. Coba kirim lagi.',
-                },
-              ];
-            });
-          },
+          // Balon terisi selagi token mengalir. Module sudah menyaring pesan kegagalan
+          // server, jadi balon tidak pernah menampilkan teks teknis "Error code: 503 …".
+          onPartial: writeLastAssistant,
         },
       );
+      streamRef.current = { close: turn.close };
+
+      turn.result.then((out) => {
+        setStreaming(false);
+        streamRef.current = null;
+        if (out.status === 'ok') {
+          writeLastAssistant(out.text);
+          if (autoSpeak) speak(out.text);
+          onAssistantMessage?.(out.text);
+          return;
+        }
+        if (out.status === 'error') {
+          // Buang balon asisten yang masih kosong, lalu sisipkan kalimat galatnya.
+          setMessages((current) => {
+            const next = [...current];
+            const last = next[next.length - 1];
+            if (last?.role === 'assistant' && !last.content) next.pop();
+            return [...next, { role: 'assistant', content: out.text }];
+          });
+          return;
+        }
+        // `empty` / `failure`: satu balon dengan kalimat jujur dari module.
+        writeLastAssistant(out.text);
+      });
+      // Jaring pengaman: kalau janji giliran ditolak (mis. bug di module), jangan
+      // biarkan panel tersangkut di status "mengirim" selamanya.
+      turn.result.catch(() => {
+        setStreaming(false);
+        streamRef.current = null;
+        writeLastAssistant('Koneksi terputus. Coba kirim lagi.');
+      });
     },
     // `messages` ikut jadi dependensi: riwayat percakapan dibangun saat kirim,
     // jadi kalau tidak, yang terkirim bisa riwayat dari render lama (basi).

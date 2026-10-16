@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../types';
-import type { HistoryEntry } from '../services/ai/transport';
+import type { HistoryEntry } from '../services/ai/types';
 import { stripMarkdown } from './cleanText';
 
 /**

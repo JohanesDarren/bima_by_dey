@@ -4,10 +4,10 @@
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Module baru punya interface sempit (satu fungsi giliran) yang menerima stream sebagai dependensi, bukan membuatnya sendiri.
-- [ ] Chat teks dan panggilan suara sama-sama memakai module ini; tidak ada lagi dua salinan urutan "stream → baca balasan → tangani galat → riwayat".
-- [ ] Pesan galat untuk kegagalan yang sama kini identik di chat dan suara.
-- [ ] Ada tes yang mengunci perilaku: balasan kosong, kegagalan sisi server, dan pemutus arus terbuka — dijalankan tanpa jaringan (stream palsu disuntikkan).
-- [ ] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.
+- [x] Module baru punya interface sempit (satu fungsi giliran) yang menerima stream sebagai dependensi, bukan membuatnya sendiri.
+- [x] Chat teks dan panggilan suara sama-sama memakai module ini; tidak ada lagi dua salinan urutan "stream → baca balasan → tangani galat → riwayat".
+- [x] Pesan galat untuk kegagalan yang sama kini identik di chat dan suara.
+- [x] Ada tes yang mengunci perilaku: balasan kosong, kegagalan sisi server, dan pemutus arus terbuka — dijalankan tanpa jaringan (stream palsu disuntikkan).
+- [x] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.

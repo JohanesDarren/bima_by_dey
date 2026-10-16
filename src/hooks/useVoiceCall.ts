@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
-import { streamKroomboxChat, type HistoryEntry } from '../services/ai/transport';
-import { readAssistantReply } from '../services/assistantReply';
-import { CircuitOpenError } from '../services/breaker';
+import { streamKroomboxChat } from '../services/ai/transport';
+import type { HistoryEntry } from '../services/ai/types';
+import { runConversationTurn } from '../services/ai/conversationTurn';
 import { VOICE_MAX_WORDS } from '../utils/assistantText';
 import { HISTORY_LIMIT, VOICE_PERSONA, VOICE_RULES } from '../utils/chefPrompt';
 import type { Segment } from '../types';
@@ -119,11 +119,12 @@ export function useVoiceCall(
       processingRef.current = true;
       setState('thinking');
       setErrorMsg(null);
-      let response = '';
 
-      streamRef.current = streamKroomboxChat(
+      // Urutan satu giliran hidup di module giliran percakapan; hook ini hanya
+      // mengurus mikrofon & TTS.
+      const turn = runConversationTurn(
         {
-          message: [
+          prompt: [
             VOICE_PERSONA,
             `Resep: ${recipeRef.current.recipeName || 'belum dipilih'}.`,
             `Langkah aktif: ${recipeRef.current.stepLabel || 'tidak ada'}.`,
@@ -136,62 +137,53 @@ export function useVoiceCall(
             // pertanyaan membuat jawaban suara melenceng dari yang ditanya.
             `Pertanyaan: ${text}`,
           ].join('\n'),
+          question: text,
           // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
           history: historyRef.current,
           // Kuota token keluaran (dipungut dari versi upstream); 150 ≈ 3x batas 25 kata.
           maxTokens: 150,
+          maxWords: VOICE_MAX_WORDS,
         },
+        streamKroomboxChat,
         {
-          onToken: (token) => {
-            response += token;
-          },
-          onDone: () => {
-            streamRef.current = null;
-            if (!activeRef.current) return;
-            // Server kadang mengirim pesan kegagalannya sendiri sebagai "jawaban"
-            // (mis. "Server AI gagal merespons: Error code: 503 …"). Jangan dibacakan
-            // seolah-olah itu jawaban masakan.
-            const reply = readAssistantReply(response, {
-              maxWords: VOICE_MAX_WORDS,
-              emptyMessage: 'Jawaban suara belum tersedia. Coba lagi.',
-            });
-            if (reply.kind !== 'text') {
-              processingRef.current = false;
-              setState('error');
-              setErrorMsg(reply.text);
-              return;
-            }
-            const spoken = reply.text;
-            // Simpan giliran ini supaya pertanyaan berikutnya masih nyambung.
-            const turns: HistoryEntry[] = [
-              { role: 'user', content: text },
-              { role: 'assistant', content: response },
-            ];
-            historyRef.current = [...historyRef.current, ...turns].slice(-HISTORY_LIMIT);
-            setState('speaking');
-            Speech.speak(spoken, {
-              language: 'id-ID',
-              voice: voiceRef.current,
-              rate: 0.94,
-              pitch: 1,
-              onDone: resumeListening,
-              onError: resumeListening,
-            });
-          },
-          onError: (error) => {
-            console.warn('[useVoiceCall] AI stream failed', error);
-            streamRef.current = null;
-            if (!activeRef.current) return;
-            processingRef.current = false;
-            setState('error');
-            setErrorMsg(
-              error instanceof CircuitOpenError
-                ? error.message
-                : 'Koneksi ke pendamping resep terganggu. Coba lagi.',
-            );
-          },
+          // Catat sebab teknisnya (server ini sering macet) tanpa mengubah kalimat
+          // yang dilihat pengguna.
+          onStreamError: (error) => console.warn('[useVoiceCall] AI stream failed', error),
         },
       );
+      streamRef.current = { close: turn.close };
+
+      turn.result.then((out) => {
+        streamRef.current = null;
+        if (!activeRef.current) return;
+        if (out.status !== 'ok') {
+          // `empty`/`failure` (jawaban tak berguna) dan `error` (stream gagal) sama-sama
+          // ditampilkan sebagai galat suara — jangan dibacakan seolah-olah jawaban masakan.
+          processingRef.current = false;
+          setState('error');
+          setErrorMsg(out.text);
+          return;
+        }
+        // Simpan giliran ini supaya pertanyaan berikutnya masih nyambung.
+        historyRef.current = [...historyRef.current, ...out.turn].slice(-HISTORY_LIMIT);
+        setState('speaking');
+        Speech.speak(out.text, {
+          language: 'id-ID',
+          voice: voiceRef.current,
+          rate: 0.94,
+          pitch: 1,
+          onDone: resumeListening,
+          onError: resumeListening,
+        });
+      });
+      // Jaring pengaman: jangan biarkan panggilan tersangkut di status "berpikir".
+      turn.result.catch(() => {
+        streamRef.current = null;
+        if (!activeRef.current) return;
+        processingRef.current = false;
+        setState('error');
+        setErrorMsg('Koneksi terputus. Coba lagi.');
+      });
     },
     [resumeListening],
   );

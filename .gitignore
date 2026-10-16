@@ -49,6 +49,7 @@ yarn-error.*
 .scratch/**/breaker-check/
 # hasil kompilasi sementara uji tests
 tests/.compiled/
+tests/.compiled-cjs/
 
 # generated native folders
 /ios
