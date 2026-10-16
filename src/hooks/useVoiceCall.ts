@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Speech from 'expo-speech';
-import { serverFailureText, streamKroomboxChat, type HistoryEntry } from '../services/kroombox';
+import { streamKroomboxChat, type HistoryEntry } from '../services/ai/transport';
+import { readAssistantReply } from '../services/assistantReply';
 import { CircuitOpenError } from '../services/breaker';
-import { VOICE_MAX_WORDS, cleanAssistantText } from '../utils/assistantText';
-import { VOICE_HISTORY_LIMIT, VOICE_PERSONA, VOICE_RULES } from '../utils/chefPrompt';
+import { VOICE_MAX_WORDS } from '../utils/assistantText';
+import { HISTORY_LIMIT, VOICE_PERSONA, VOICE_RULES } from '../utils/chefPrompt';
 import type { Segment } from '../types';
 import type {
   ExpoSpeechRecognitionErrorEvent,
@@ -137,7 +138,6 @@ export function useVoiceCall(
           ].join('\n'),
           // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
           history: historyRef.current,
-          useRag: false,
           // Kuota token keluaran (dipungut dari versi upstream); 150 ≈ 3x batas 25 kata.
           maxTokens: 150,
         },
@@ -151,26 +151,23 @@ export function useVoiceCall(
             // Server kadang mengirim pesan kegagalannya sendiri sebagai "jawaban"
             // (mis. "Server AI gagal merespons: Error code: 503 …"). Jangan dibacakan
             // seolah-olah itu jawaban masakan.
-            const failure = serverFailureText(response);
-            if (failure) {
+            const reply = readAssistantReply(response, {
+              maxWords: VOICE_MAX_WORDS,
+              emptyMessage: 'Jawaban suara belum tersedia. Coba lagi.',
+            });
+            if (reply.kind !== 'text') {
               processingRef.current = false;
               setState('error');
-              setErrorMsg(failure);
+              setErrorMsg(reply.text);
               return;
             }
-            const spoken = cleanAssistantText(response, { maxWords: VOICE_MAX_WORDS });
-            if (!spoken) {
-              processingRef.current = false;
-              setState('error');
-              setErrorMsg('Jawaban suara belum tersedia. Coba lagi.');
-              return;
-            }
+            const spoken = reply.text;
             // Simpan giliran ini supaya pertanyaan berikutnya masih nyambung.
             const turns: HistoryEntry[] = [
               { role: 'user', content: text },
               { role: 'assistant', content: response },
             ];
-            historyRef.current = [...historyRef.current, ...turns].slice(-VOICE_HISTORY_LIMIT);
+            historyRef.current = [...historyRef.current, ...turns].slice(-HISTORY_LIMIT);
             setState('speaking');
             Speech.speak(spoken, {
               language: 'id-ID',

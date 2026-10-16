@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../types';
-import type { HistoryEntry } from '../services/kroombox';
+import type { HistoryEntry } from '../services/ai/transport';
 import { stripMarkdown } from './cleanText';
 
 /**
@@ -17,11 +17,8 @@ import { stripMarkdown } from './cleanText';
  * tempelan bagian "Konsep Produk" dari dokumen RAG.
  */
 
-/** Jumlah pesan riwayat terakhir yang ikut dikirim (3 tanya + 3 jawab). */
+/** Jumlah pesan riwayat terakhir yang ikut dikirim (3 tanya + 3 jawab). Dipakai chat & panggilan suara. */
 export const HISTORY_LIMIT = 6;
-
-/** Sama, dipakai mode panggilan suara. */
-export const VOICE_HISTORY_LIMIT = 6;
 
 /** Baris persona: bikin jawaban tetap "ngobrol sebagai koki", bukan rangkuman dokumen. */
 const CHEF_PERSONA = 'Anda adalah Chef Sorghum — koki pendamping di aplikasi sorgumcore.';

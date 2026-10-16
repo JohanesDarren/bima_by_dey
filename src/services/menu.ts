@@ -1,11 +1,6 @@
-import {
-  chatKroombox,
-  extractJson,
-  extractJsonArray,
-  KroomboxTimeoutError,
-  serverFailureText,
-  ServerSideError,
-} from './kroombox';
+import { chatKroombox } from './ai/transport';
+import { extractJson, extractJsonArray } from './ai/json';
+import { KroomboxTimeoutError, serverFailureText, ServerSideError } from './ai/failures';
 import { CircuitOpenError } from './breaker';
 import { normalizeRecipeResponse } from './recipeNormalizer';
 import { getCachedMenus, getCachedRecipe, setCachedMenus, setCachedRecipe } from './cache';
@@ -167,7 +162,6 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
 
   const r = await chatKroombox({
     message: promptRecipe(menuName, seg),
-    useRag: false,
     maxTokens: RECIPE_MAX_TOKENS,
   });
   // Model di sisi server tumbang → berhenti dengan pesan jujur.
@@ -224,7 +218,6 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
           ...excluded,
           ...[...collected.values()].map((menu) => menu.name),
         ]),
-        useRag: false,
         maxTokens: MENU_MAX_TOKENS,
       });
       // Model di sisi server tumbang → berhenti sekarang, jangan ulang.

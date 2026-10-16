@@ -156,7 +156,7 @@ export function cleanAssistantText(value: string, options?: { maxWords?: number 
  * dianggap batas kalimat — sebelum dilindungi, "Gunakan 1.5 liter air." terpotong jadi
  * "Gunakan 1." dan artinya rusak.
  *
- * Diambil dari versi upstream (main) apa adanya; sudah ada selftest-nya.
+ * Diambil dari versi upstream (main) apa adanya.
  */
 export function limitSentences(value: string, maximum: number): string {
   const clean = cleanAssistantText(value);

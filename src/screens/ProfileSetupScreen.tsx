@@ -20,7 +20,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ProfileSetup'>;
 /** Profile Setup — the core differentiation screen (PRD F-02 / S-03). */
 export function ProfileSetupScreen({ navigation }: Props) {
   const { isDesktop } = useResponsive();
-  const userId = useAuthStore((s) => s.user?.id);
   const isGuest = useAuthStore((s) => s.isGuest);
   const updateProfile = useProfileStore((s) => s.updateProfile);
   const profile = useProfileStore((s) => s.profile);
@@ -50,11 +49,10 @@ export function ProfileSetupScreen({ navigation }: Props) {
     }
     setSaving(true);
     setError(null);
-    const res = await updateProfile(userId ?? 'guest', {
+    const res = await updateProfile({
       fullName: fullName.trim(),
       targetAgeGroup: ageGroup,
       specialCondition: condition,
-      aiReasoningEnabled: profile?.ai_reasoning_enabled ?? true,
     });
     setSaving(false);
     if (res.error) {

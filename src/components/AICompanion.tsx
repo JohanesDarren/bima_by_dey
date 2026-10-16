@@ -14,9 +14,10 @@ import * as Speech from 'expo-speech';
 import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
-import { serverFailureText, streamKroomboxChat } from '../services/kroombox';
+import { streamKroomboxChat } from '../services/ai/transport';
 import { CircuitOpenError } from '../services/breaker';
-import { CHAT_MAX_WORDS, CHAT_LOADING_STAGES, cleanAssistantText } from '../utils/assistantText';
+import { readAssistantReply } from '../services/assistantReply';
+import { CHAT_MAX_WORDS, CHAT_LOADING_STAGES } from '../utils/assistantText';
 import { buildChefHistory, buildChefMessage } from '../utils/chefPrompt';
 
 interface Props {
@@ -103,8 +104,8 @@ export function AICompanion({
       setInput('');
       setMessages((current) => [
         ...current,
-        { role: 'user', content: text, reasoning_content: null },
-        { role: 'assistant', content: '', reasoning_content: null },
+        { role: 'user', content: text },
+        { role: 'assistant', content: '' },
       ]);
       setStreaming(true);
       let assistantText = '';
@@ -116,7 +117,6 @@ export function AICompanion({
           message: buildChefMessage(context, text),
           // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
           history: buildChefHistory(messages),
-          useRag: false,
           // Kuota token keluaran (dipungut dari versi upstream). 250 ≈ 3x batas 30 kata
           // kita, jadi longgar untuk jawaban benar dan hanya memotong yang berlarut.
           maxTokens: 250,
@@ -126,14 +126,12 @@ export function AICompanion({
             assistantText += delta;
             // Kalau server mengirim pesan kegagalannya sendiri, tampilkan kalimat
             // jujurnya — jangan biarkan teks teknis "Error code: 503 …" jadi balon jawaban.
-            const failure = serverFailureText(assistantText);
-            const clean =
-              failure ?? cleanAssistantText(assistantText, { maxWords: CHAT_MAX_WORDS });
+            const reply = readAssistantReply(assistantText, { maxWords: CHAT_MAX_WORDS });
             setMessages((current) => {
               const next = [...current];
               const last = next[next.length - 1];
               if (last?.role === 'assistant') {
-                next[next.length - 1] = { ...last, content: clean };
+                next[next.length - 1] = { ...last, content: reply.text };
               }
               return next;
             });
@@ -144,21 +142,18 @@ export function AICompanion({
             setMessages((current) => {
               const last = current[current.length - 1];
               if (last?.role !== 'assistant') return current;
-              if (!last.content.trim()) {
-                // Server menutup koneksi tanpa satu pun potongan jawaban. Jangan
-                // biarkan balon KOSONG menggantung — pengguna merasa tidak dijawab
-                // dan tidak tahu kenapa. Katakan apa adanya.
-                return [
-                  ...current.slice(0, -1),
-                  { ...last, content: 'Layanan tidak mengirim jawaban. Coba kirim lagi.' },
-                ];
+              // Server menutup koneksi tanpa satu pun potongan jawaban. Jangan
+              // biarkan balon KOSONG menggantung — pengguna merasa tidak dijawab
+              // dan tidak tahu kenapa. Katakan apa adanya.
+              const reply = readAssistantReply(last.content, {
+                maxWords: CHAT_MAX_WORDS,
+                emptyMessage: 'Layanan tidak mengirim jawaban. Coba kirim lagi.',
+              });
+              if (reply.kind === 'text') {
+                if (autoSpeak) speak(reply.text);
+                onAssistantMessage?.(reply.text);
               }
-              const failure = serverFailureText(last.content);
-              const clean =
-                failure ?? cleanAssistantText(last.content, { maxWords: CHAT_MAX_WORDS });
-              if (autoSpeak && !failure) speak(clean);
-              onAssistantMessage?.(clean);
-              return [...current.slice(0, -1), { ...last, content: clean }];
+              return [...current.slice(0, -1), { ...last, content: reply.text }];
             });
           },
           onError: (error) => {
@@ -178,7 +173,6 @@ export function AICompanion({
                     error instanceof CircuitOpenError
                       ? error.message
                       : 'Koneksi terputus. Coba kirim lagi.',
-                  reasoning_content: null,
                 },
               ];
             });

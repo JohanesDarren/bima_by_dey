@@ -30,7 +30,7 @@ function LoadingScreen() {
  * Root navigation.
  *
  * Flow (PRD §8.1):
- *  1. Splash while the Supabase session / MMKV state bootstraps.
+ *  1. Splash while local (MMKV) guest state bootstraps.
  *  2. While signed in, hydrate the demographic profile before routing.
  *  3. Signed in & hydrated → ProfileSetup (first run, no demographics yet)
  *     or Main chat. Signed out → Login.
@@ -38,15 +38,13 @@ function LoadingScreen() {
 export function RootNavigator() {
   const status = useAuthStore((s) => s.status);
   const bootstrapped = useAuthStore((s) => s.bootstrapped);
-  const isGuest = useAuthStore((s) => s.isGuest);
-  const userId = useAuthStore((s) => s.user?.id);
   const hydrated = useProfileStore((s) => s.hydrated);
   const fetchProfile = useProfileStore((s) => s.fetchProfile);
   const bootstrap = useAuthStore((s) => s.bootstrap);
 
   const signedIn = status === 'signedIn';
 
-  // Boot auth session/guest state exactly once on mount.
+  // Boot guest state exactly once on mount.
   useEffect(() => {
     if (!bootstrapped) {
       bootstrap();
@@ -57,13 +55,13 @@ export function RootNavigator() {
   // Once auth resolves, hydrate the profile before choosing the route.
   useEffect(() => {
     if (bootstrapped && signedIn && !hydrated) {
-      fetchProfile(userId ?? 'guest');
+      fetchProfile();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bootstrapped, signedIn, hydrated, userId, isGuest]);
+  }, [bootstrapped, signedIn, hydrated]);
 
   if (!bootstrapped) return <SplashScreen />;
-  // Wait for profile hydration (auth + guest) before mounting the navigator.
+  // Wait for profile hydration (guest) before mounting the navigator.
   if (signedIn && !hydrated) return <LoadingScreen />;
 
   const initialRoute = !signedIn ? 'Login' : 'Browse';

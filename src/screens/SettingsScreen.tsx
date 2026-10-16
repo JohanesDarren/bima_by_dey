@@ -3,7 +3,6 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Constants from 'expo-constants';
-import { Button } from '../components/Button';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useFlowStore } from '../store/flowStore';
@@ -14,11 +13,10 @@ import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
-/** Settings — logout, segmentasi, riwayat, wipe local data. */
+/** Settings — segmentasi, riwayat, wipe local data. */
 export function SettingsScreen({ navigation }: Props) {
   const profile = useProfileStore((s) => s.profile);
   const isGuest = useAuthStore((s) => s.isGuest);
-  const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
   const resetProfile = useProfileStore((s) => s.reset);
   const resetFlow = useFlowStore((s) => s.reset);
@@ -37,16 +35,8 @@ export function SettingsScreen({ navigation }: Props) {
     resetFlow();
   };
 
-  const handleLogout = async () => {
-    const ok = await confirmAsync('Keluar', 'Yakin ingin keluar dari akun ini?', 'Keluar', 'Batal');
-    if (ok) await signOut();
-  };
-
-  const displayName =
-    profile?.full_name?.trim() || (isGuest ? 'Tamu' : (user?.email ?? 'Pengguna'));
-  const displayMeta = isGuest
-    ? 'Mode tamu (data lokal)'
-    : `${profile?.target_age_group ?? 'Belum diatur'} · ${profile?.special_condition ?? 'Belum diatur'}`;
+  const displayName = profile?.full_name?.trim() || 'Tamu';
+  const displayMeta = `${profile?.target_age_group ?? 'Belum diatur'} · ${profile?.special_condition ?? 'Belum diatur'}`;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -83,8 +73,6 @@ export function SettingsScreen({ navigation }: Props) {
           </Text>
           <Text style={styles.infoSub}>Sorghum AI Nutritionist — prototype akademik</Text>
         </View>
-
-        {!isGuest ? <Button title="Keluar" variant="danger" onPress={handleLogout} /> : null}
       </ScrollView>
     </SafeAreaView>
   );

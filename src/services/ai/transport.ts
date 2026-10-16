@@ -1,6 +1,12 @@
 import EventSource from 'react-native-sse';
-import { KROOMBOX_API_KEY, KROOMBOX_BASE_URL, KROOMBOX_CHAT_ENDPOINT } from '../lib/kroomboxConfig';
-import { CircuitBreaker, CircuitOpenError } from './breaker';
+import {
+  KROOMBOX_API_KEY,
+  KROOMBOX_BASE_URL,
+  KROOMBOX_CHAT_ENDPOINT,
+} from '../../lib/kroomboxConfig';
+import { CircuitBreaker, CircuitOpenError } from '../breaker';
+import { completeJsonSlice } from './json';
+import { humanizeTransportReason, KroomboxError, KroomboxTimeoutError } from './failures';
 
 /**
  * Pengatur waktu permintaan RAG (ms).
@@ -25,7 +31,7 @@ const TOTAL_TIMEOUT_MS = 300_000;
  * lewat collectKroomboxStream. Tanpa ini, kedua jalur itu menunggu selamanya saat
  * server berhenti mengirim data.
  */
-export const CHAT_IDLE_TIMEOUT_MS = 60_000;
+const CHAT_IDLE_TIMEOUT_MS = 60_000;
 
 /**
  * Pemutus arus bersama untuk SELURUH permintaan AI (menu, resep, chat, suara) —
@@ -245,134 +251,6 @@ export function streamKroomboxChat(
   };
 }
 
-/** Klasifikasi error sederhana untuk chat store. */
-export class KroomboxError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'KroomboxError';
-  }
-}
-
-/**
- * Permintaan berhenti karena server tidak mengirim data (idle) atau tidak kunjung
- * lengkap (total). Dipisahkan dari KroomboxError biasa supaya pemanggil bisa
- * memutus rantai percobaan otomatis: mengulang saat server macet cuma membuang waktu
- * pengguna, bukan menambah peluang berhasil.
- */
-export class KroomboxTimeoutError extends KroomboxError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'KroomboxTimeoutError';
-  }
-}
-
-/**
- * Kegagalan yang datang dari SISI SERVER: model AI milik server sendiri tumbang.
- *
- * Terverifikasi langsung dari stream (dicatat 2026-09-22): server mengirim
- *   {"delta": "Server AI gagal merespons: Error code: 503 - {'error': {'message':
- *   '[commandcode/xiaomi/mimo-v2.6-flash] [502]: fetch failed (cause: ETIMEDOUT)'}}"}
- * lalu langsung [DONE]. Mengulang permintaan saat ini tidak menolong dan hanya
- * membuat pengguna menunggu percobaan kedua yang juga gagal.
- */
-export class ServerSideError extends KroomboxError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ServerSideError';
-  }
-}
-
-const SERVER_FAILURE =
-  /(Server AI gagal merespons|Error code:\s*5\d\d|fetch failed|ETIMEDOUT|\b50[234]\b|timed out)/i;
-
-/**
- * Mesin JS/HTTP kadang memberi pesan teknis berbahasa Inggris ("fetch failed",
- * "terminated", "ECONNRESET"). Bagi pengguna itu tidak berarti apa-apa — ganti dengan
- * kalimat Indonesia yang sama artinya. Pesan yang sudah berbahasa Indonesia dibiarkan.
- */
-function humanizeTransportReason(reason: string): string {
-  if (/menunggu respons BIMA|BIMA terputus|layanan RAG/i.test(reason)) return reason;
-  if (
-    /fetch failed|terminated|socket|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|timed out|timeout/i.test(
-      reason,
-    )
-  ) {
-    return 'Koneksi ke layanan RAG terputus di tengah jalan. Coba lagi.';
-  }
-  return reason;
-}
-
-/**
- * Kalau balasan server sebenarnya pesan kegagalan modelnya sendiri, kembalikan kalimat
- * yang bisa ditampilkan ke pengguna (dengan kode kesalahan). Selain itu null.
- */
-export function serverFailureText(raw: string): string | null {
-  if (!SERVER_FAILURE.test(raw)) return null;
-  const code = raw.match(/\b(50[234])\b/)?.[1];
-  return code
-    ? `Server AI gagal merespons (kode ${code} dari model di sisi server). Coba lagi beberapa menit lagi.`
-    : 'Server AI gagal merespons. Coba lagi beberapa menit lagi.';
-}
-
-// ---------------------------------------------------------------------------
-// Streaming call (semua permintaan: menu, resep, chat)
-// ---------------------------------------------------------------------------
-
-/**
- * Potongan JSON pertama yang SUDAH utuh di dalam teks (kurung seimbang, sadar
- * string), atau null bila belum lengkap.
- *
- * Dipakai untuk berhenti lebih awal. Server sering terus menulis prosa setelah
- * JSON-nya selesai (analisis harga per kg, alergen, "Catatan Verifikasi … skor
- * kelayakan") selama puluhan detik. Dulu kita menunggu sampai server bilang
- * selesai: hasilnya lambat, dan permintaan yang lewat batas waktu dibunuh
- * padahal datanya sudah lengkap. Potongan ini baru dianggap utuh bila benar-benar
- * bisa diparse, jadi tidak ada risiko memotong data separuh.
- */
-function completeJsonSlice(text: string): string | null {
-  const first = [text.indexOf('{'), text.indexOf('[')]
-    .filter((index) => index !== -1)
-    .sort((a, b) => a - b)[0];
-  if (first === undefined) return null;
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = first; i < text.length; i += 1) {
-    const char = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (char === '\\') escaped = true;
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') inString = true;
-    else if (char === '{' || char === '[') depth += 1;
-    else if (char === '}' || char === ']') {
-      depth -= 1;
-      if (depth === 0) {
-        // Model kadang menulis beberapa array terpisah; jangan berhenti kalau
-        // masih ada array berikutnya (hasilnya nanti cuma sebagian).
-        if (
-          text
-            .slice(i + 1)
-            .trimStart()
-            .startsWith('[')
-        )
-          return null;
-        const slice = text.slice(first, i + 1);
-        try {
-          JSON.parse(slice);
-          return slice;
-        } catch {
-          return null;
-        }
-      }
-    }
-  }
-  return null;
-}
-
 /**
  * Collect an SSE response into one string. Structured RAG generations can take
  * over a minute; streaming keeps the proxy connection active and avoids a
@@ -479,110 +357,4 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
  */
 export async function chatKroombox(req: StreamRequest): Promise<string> {
   return collectKroomboxStream(req);
-}
-
-/**
- * Beberapa balasan memakai kunci tanpa tanda kutip (mis. `"nutrition": {calories: 480}`)
- * — itu bukan JSON sah, tapi isinya utuh. Contohnya muncul saat template prompt
- * menuliskan contoh kunci tanpa kutip dan model menyalinnya apa adanya. Kutip
- * kuncinya dulu sebelum menyerah: jauh lebih murah daripada mengulang permintaan
- * yang butuh 1-4 menit.
- *
- * PENTING — hanya menambal kunci di LUAR tanda kutip. Versi polos `([{,]\s*)(\w+)(\s*:)`
- * juga cocok di dalam teks biasa, sehingga kalimat seperti `"Bahan, lalu: masukkan"`
- * berubah jadi `"Bahan, "lalu": masukkan"` dan JSON-nya MALAH rusak. Jadi kita
- * telusuri teksnya sambil melacak apakah sedang berada di dalam string.
- */
-function quoteBareKeys(value: string): string {
-  let out = '';
-  let inString = false;
-  let escaped = false;
-  let expectKey = false; // barusan lewat `{` atau `,` di luar string → kunci menyusul
-  for (let i = 0; i < value.length; i += 1) {
-    const char = value[i]!;
-    if (inString) {
-      out += char;
-      if (escaped) escaped = false;
-      else if (char === '\\') escaped = true;
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-      expectKey = false;
-      out += char;
-      continue;
-    }
-    if (char === '{' || char === ',') {
-      expectKey = true;
-      out += char;
-      continue;
-    }
-    if (char === ':' || char === '}' || char === ']') {
-      expectKey = false;
-      out += char;
-      continue;
-    }
-    if (expectKey && /[A-Za-z_$]/.test(char)) {
-      // Awal kunci telanjang: kutip sampai sebelum titik dua.
-      let end = i;
-      while (end < value.length && /[A-Za-z0-9_$]/.test(value[end]!)) end += 1;
-      const rest = value.slice(end).match(/^\s*:/);
-      if (rest) {
-        out += `"${value.slice(i, end)}"`;
-        i = end - 1;
-        expectKey = false;
-        continue;
-      }
-    }
-    if (/\s/.test(char)) {
-      out += char;
-      continue;
-    }
-    expectKey = false;
-    out += char;
-  }
-  return out;
-}
-
-/**
- * Inti bersama extractJson / extractJsonArray: buang pagar markdown, ambil potongan
- * dari tanda buka pertama sampai tanda tutup terakhir, lalu parse — dengan satu kali
- * percobaan menambal kunci telanjang sebelum menyerah.
- */
-function parseJsonSlice<T>(raw: string, open: string, close: string): T | null {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = fence ? fence[1]!.trim() : trimmed;
-  const start = candidate.indexOf(open);
-  const end = candidate.lastIndexOf(close);
-  if (start === -1 || end === -1 || end <= start) return null;
-  const slice = candidate.slice(start, end + 1);
-  try {
-    return JSON.parse(slice) as T;
-  } catch {
-    try {
-      return JSON.parse(quoteBareKeys(slice)) as T;
-    } catch {
-      return null;
-    }
-  }
-}
-
-/**
- * Ekstrak JSON array dari respons (strip fence) → T[] | null.
- * Respons menu & pencarian berbentuk array — extractJson (objek) tak cukup.
- */
-export function extractJsonArray<T>(raw: string): T[] | null {
-  const value = parseJsonSlice<T[]>(raw, '[', ']');
-  return Array.isArray(value) ? value : null;
-}
-
-/**
- * Ekstrak JSON dari respons yang mungkin dibungkus markdown fence
- * (```json ... ```) atau ada teks pengantar. Return null jika tidak ketemu.
- */
-export function extractJson<T>(raw: string): T | null {
-  return parseJsonSlice<T>(raw, '{', '}');
 }

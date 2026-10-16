@@ -47,6 +47,8 @@ yarn-error.*
 
 # hasil kompilasi sementara uji .scratch
 .scratch/**/breaker-check/
+# hasil kompilasi sementara uji tests
+tests/.compiled/
 
 # generated native folders
 /ios

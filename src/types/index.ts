@@ -1,14 +1,13 @@
-/** Domain types matching the Supabase schema in supabase/migrations/*.sql (snake_case). */
+/** Domain types for the local (guest) data model (snake_case, persisted as JSON). */
 
 export type AgeGroup = 'Balita' | 'Anak SD' | 'Remaja' | 'Dewasa' | 'Lansia';
 export type SpecialCondition = 'Bumil' | 'Busui' | 'ABK' | 'Umum';
 
 export interface Profile {
-  id: string; // = auth.users.id
+  id: string; // local guest id ('guest')
   full_name: string | null;
   target_age_group: AgeGroup | null;
   special_condition: SpecialCondition | null;
-  ai_reasoning_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -18,18 +17,14 @@ export interface ProfileInput {
   fullName: string;
   targetAgeGroup: AgeGroup | null;
   specialCondition: SpecialCondition | null;
-  aiReasoningEnabled: boolean;
 }
 
 export type MessageRole = 'user' | 'assistant' | 'system';
 
 export interface ChatMessage {
   id?: string;
-  session_id?: string;
   role: MessageRole;
   content: string;
-  reasoning_content: string | null;
-  created_at?: string;
 }
 
 // ---------------------------------------------------------------------------
