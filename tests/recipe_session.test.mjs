@@ -21,11 +21,19 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(HERE, '.compiled-recipe');
 
 const require = compileForTest({
-  sources: ['src/services/recipeSession.ts', 'src/utils/menuKey.ts'],
+  sources: [
+    'src/services/recipeSession.ts',
+    'src/services/errors.ts',
+    'src/services/ai/failures.ts',
+    'src/services/breaker.ts',
+    'src/utils/menuKey.ts',
+    'src/constants/index.ts',
+  ],
   outDir: OUT,
 });
 
 const { createRecipeSession } = require(path.join(OUT, 'src', 'services', 'recipeSession.js'));
+const { UserFacingError } = require(path.join(OUT, 'src', 'services', 'errors.js'));
 
 const SEGMENT = { ageGroup: 'Dewasa', condition: 'Umum' };
 
@@ -75,20 +83,30 @@ test('sesi: open → status loading lalu ready, resep terisi', async () => {
   assert.equal(s.menuName, 'Bubur Sorgum');
 });
 
-test('sesi: kegagalan → status error dengan pesan galat dari pengambil', async () => {
-  const fetcher = fakeFetcher({ error: new Error('Koneksi ke layanan resep terputus.') });
+test('sesi: kegagalan yang pesannya sudah untuk pengguna → diteruskan apa adanya', async () => {
+  const fetcher = fakeFetcher({
+    error: new UserFacingError('Resep dari RAG tidak dapat dibaca. Coba lagi.'),
+  });
   const session = createRecipeSession(fetcher);
 
   await session.open('Bubur Sorgum', SEGMENT);
 
   const s = session.getState();
   assert.equal(s.status, 'error');
-  assert.equal(s.error, 'Koneksi ke layanan resep terputus.');
+  assert.equal(s.error, 'Resep dari RAG tidak dapat dibaca. Coba lagi.');
   assert.equal(s.recipe, null);
 });
 
-test('sesi: kegagalan tanpa pesan → kalimat pengganti dimiliki module', async () => {
-  const session = createRecipeSession(fakeFetcher({ error: new Error('   ') }));
+test('sesi: galat teknis (tak berkelas) → kalimat pengganti konteks resep dari module errors', async () => {
+  const session = createRecipeSession(fakeFetcher({ error: new Error('boom low-level') }));
+
+  await session.open('Bubur Sorgum', SEGMENT);
+
+  assert.equal(session.getState().error, 'Layanan resep tidak merespons. Coba lagi sebentar lagi.');
+});
+
+test('sesi: galat berkelas dengan pesan kosong → kalimat tetapnya (bukan string kosong)', async () => {
+  const session = createRecipeSession(fakeFetcher({ error: new UserFacingError('   ') }));
 
   await session.open('Bubur Sorgum', SEGMENT);
 

@@ -3,6 +3,7 @@ import * as Speech from 'expo-speech';
 import { streamKroomboxChat } from '../services/ai/transport';
 import type { HistoryEntry } from '../services/ai/types';
 import { runConversationTurn } from '../services/ai/conversationTurn';
+import { describeError } from '../services/errors';
 import { VOICE_MAX_WORDS } from '../utils/assistantText';
 import { HISTORY_LIMIT, VOICE_PERSONA, VOICE_RULES } from '../prompts/chefPrompt';
 import type { Segment } from '../types';
@@ -177,12 +178,12 @@ export function useVoiceCall(
         });
       });
       // Jaring pengaman: jangan biarkan panggilan tersangkut di status "berpikir".
-      turn.result.catch(() => {
+      turn.result.catch((error: unknown) => {
         streamRef.current = null;
         if (!activeRef.current) return;
         processingRef.current = false;
         setState('error');
-        setErrorMsg('Koneksi terputus. Coba lagi.');
+        setErrorMsg(describeError(error, 'voice'));
       });
     },
     [resumeListening],

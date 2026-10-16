@@ -1,4 +1,4 @@
-import { serverFailureText } from './ai/failures';
+import { serverFailureText } from './errors';
 import { cleanAssistantText } from '../utils/assistantText';
 
 /**

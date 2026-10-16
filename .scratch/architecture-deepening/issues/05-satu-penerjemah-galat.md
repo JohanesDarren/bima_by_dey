@@ -4,9 +4,9 @@
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Hanya ada satu tempat yang memetakan jenis galat ke teks yang dilihat pengguna.
-- [ ] Galat yang sama tampil dengan kalimat yang sama di chat, panggilan suara, dan pemuatan menu/resep.
-- [ ] Pemetaan bisa diuji sebagai tabel (jenis galat masuk → kalimat keluar) tanpa jaringan.
-- [ ] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.
+- [x] Hanya ada satu tempat yang memetakan jenis galat ke teks yang dilihat pengguna.
+- [x] Galat yang sama tampil dengan kalimat yang sama di chat, panggilan suara, dan pemuatan menu/resep.
+- [x] Pemetaan bisa diuji sebagai tabel (jenis galat masuk → kalimat keluar) tanpa jaringan.
+- [x] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.

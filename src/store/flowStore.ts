@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { FoodCategory, MenuItem, Segment } from '../types';
 import { searchRecipes } from '../services/menu';
+import { describeError, UserFacingError } from '../services/errors';
 import { MENU_COUNT, NO_NEW_MENU_MESSAGE } from '../constants';
 import { menuKey } from '../utils/menuKey';
 
@@ -65,16 +66,17 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       // Sebagian hasil tetap berguna: tampilkan yang ada, jangan dibuang.
       // (Server mengirim jawaban sekaligus di akhir, jadi tidak ada gunanya
       // menampilkan bertahap — semua menu muncul bersama di sini.)
-      if (generated.length === 0) throw new Error(NO_NEW_MENU_MESSAGE);
+      if (generated.length === 0) throw new UserFacingError(NO_NEW_MENU_MESSAGE);
       const seen = new Set(previous.map((menu) => menuKey(menu.name)));
       const unique = generated.filter((menu) => !seen.has(menuKey(menu.name)));
-      if (unique.length === 0) throw new Error(NO_NEW_MENU_MESSAGE);
+      if (unique.length === 0) throw new UserFacingError(NO_NEW_MENU_MESSAGE);
       set({ menus: [...previous, ...unique], loadingMenus: false, segment, category });
     } catch (e) {
       if (requestId !== menuRequestId) return;
-      const message = (e as Error)?.message?.trim() || NO_NEW_MENU_MESSAGE;
+      // Kalimat galat dari satu module (`services/errors`): kegagalan berkelas membawa
+      // sebabnya sendiri, galat lain jatuh ke kalimat pengganti konteks menu.
       // Menu lama dibiarkan utuh: yang gagal cuma permintaan barunya.
-      set({ loadingMenus: false, menusError: message });
+      set({ loadingMenus: false, menusError: describeError(e, 'menu') });
     }
   },
 

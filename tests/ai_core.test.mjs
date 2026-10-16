@@ -23,13 +23,9 @@ const require = compileForTest({
 const { completeJsonSlice, extractJson, extractJsonArray } = require(
   path.join(OUT, 'src', 'services', 'ai', 'json.js'),
 );
-const {
-  serverFailureText,
-  humanizeTransportReason,
-  KroomboxError,
-  KroomboxTimeoutError,
-  ServerSideError,
-} = require(path.join(OUT, 'src', 'services', 'ai', 'failures.js'));
+const { KroomboxError, KroomboxTimeoutError, ServerSideError } = require(
+  path.join(OUT, 'src', 'services', 'ai', 'failures.js'),
+);
 
 // ---------------------------------------------------------------------------
 // completeJsonSlice — berhenti lebih awal saat JSON sudah utuh
@@ -102,37 +98,6 @@ test('extractJsonArray: objek (bukan array) → null', () => {
 
 test('extractJsonArray: pagar markdown', () => {
   assert.deepEqual(extractJsonArray('```json\n[{"name":"A"}]\n```'), [{ name: 'A' }]);
-});
-
-// ---------------------------------------------------------------------------
-// serverFailureText — mendeteksi kegagalan model di sisi server
-// ---------------------------------------------------------------------------
-
-test('serverFailureText: kode 503 disebut ke pengguna', () => {
-  const text = serverFailureText('Server AI gagal merespons: Error code: 503');
-  assert.match(text, /503/);
-  assert.match(text, /Coba lagi/);
-});
-
-test('serverFailureText: fetch failed/ETIMEDOUT dianggap kegagalan server', () => {
-  assert.ok(serverFailureText('[502]: fetch failed (cause: ETIMEDOUT)'));
-});
-
-test('serverFailureText: balasan normal → null', () => {
-  assert.equal(serverFailureText('Tumis bumbu sampai harum, lalu masukkan sorgum.'), null);
-});
-
-// ---------------------------------------------------------------------------
-// humanizeTransportReason — pesan teknis Inggris → kalimat Indonesia
-// ---------------------------------------------------------------------------
-
-test('humanizeTransportReason: istilah Inggris diterjemahkan', () => {
-  assert.match(humanizeTransportReason('fetch failed'), /terputus di tengah jalan/);
-});
-
-test('humanizeTransportReason: pesan Indonesia dibiarkan apa adanya', () => {
-  const id = 'Koneksi ke BIMA terputus.';
-  assert.equal(humanizeTransportReason(id), id);
 });
 
 // ---------------------------------------------------------------------------

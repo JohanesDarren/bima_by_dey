@@ -13,6 +13,7 @@ import { Button } from '../components/Button';
 import { Container } from '../components/Container';
 import { useFlowStore } from '../store/flowStore';
 import { recipeSession } from '../services/recipeSessionInstance';
+import { RECIPE_UNAVAILABLE_SENTENCE } from '../services/errors';
 import { useRecipeSession } from '../hooks/useRecipeSession';
 import { colors, radius, spacing, typography } from '../theme';
 import { cleanFoodText } from '../utils/cleanText';
@@ -144,10 +145,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
         </ScrollView>
       ) : (
         <View style={styles.centerBox}>
-          <Text style={styles.errorText}>Resep dari layanan belum bisa dibaca.</Text>
-          <Text style={styles.centerText}>
-            Layanan sedang tidak mengirim resep yang bisa dibaca. Coba lagi.
-          </Text>
+          <Text style={styles.errorText}>{RECIPE_UNAVAILABLE_SENTENCE}</Text>
           <Button title="Coba lagi" onPress={() => recipeSession.retry()} style={styles.retry} />
         </View>
       )}

@@ -1,11 +1,14 @@
 /**
- * Taksonomi kegagalan layanan AI — jenis error + cara menerjemahkan balasan
- * mentah yang ternyata pesan kegagalan model di sisi server.
+ * Taksonomi kegagalan layanan AI — jenis error saja.
  *
  * Kenapa terpisah: dulu semua ini menumpang di satu berkas besar bersama jaringan
  * dan parsing JSON. Pemanggil yang cuma ingin tahu "apakah balasan ini kegagalan
  * server?" harus menyeret seluruh transport. Sekarang pertanyaan itu punya module
  * sendiri yang bisa diuji tanpa jaringan.
+ *
+ * Penerjemahan jenis galat menjadi kalimat siap tampil TIDAK di sini — semuanya
+ * berkumpul di `services/errors` supaya cuma ada satu tempat yang memutuskan apa yang
+ * dibaca pengguna.
  */
 
 /** Klasifikasi error sederhana untuk chat store. */
@@ -43,36 +46,4 @@ export class ServerSideError extends KroomboxError {
     super(message);
     this.name = 'ServerSideError';
   }
-}
-
-const SERVER_FAILURE =
-  /(Server AI gagal merespons|Error code:\s*5\d\d|fetch failed|ETIMEDOUT|\b50[234]\b|timed out)/i;
-
-/**
- * Mesin JS/HTTP kadang memberi pesan teknis berbahasa Inggris ("fetch failed",
- * "terminated", "ECONNRESET"). Bagi pengguna itu tidak berarti apa-apa — ganti dengan
- * kalimat Indonesia yang sama artinya. Pesan yang sudah berbahasa Indonesia dibiarkan.
- */
-export function humanizeTransportReason(reason: string): string {
-  if (/menunggu respons BIMA|BIMA terputus|layanan RAG/i.test(reason)) return reason;
-  if (
-    /fetch failed|terminated|socket|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|timed out|timeout/i.test(
-      reason,
-    )
-  ) {
-    return 'Koneksi ke layanan RAG terputus di tengah jalan. Coba lagi.';
-  }
-  return reason;
-}
-
-/**
- * Kalau balasan server sebenarnya pesan kegagalan modelnya sendiri, kembalikan kalimat
- * yang bisa ditampilkan ke pengguna (dengan kode kesalahan). Selain itu null.
- */
-export function serverFailureText(raw: string): string | null {
-  if (!SERVER_FAILURE.test(raw)) return null;
-  const code = raw.match(/\b(50[234])\b/)?.[1];
-  return code
-    ? `Server AI gagal merespons (kode ${code} dari model di sisi server). Coba lagi beberapa menit lagi.`
-    : 'Server AI gagal merespons. Coba lagi beberapa menit lagi.';
 }

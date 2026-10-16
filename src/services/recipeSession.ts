@@ -1,5 +1,6 @@
 import type { Recipe, Segment } from '../types';
 import { menuKey } from '../utils/menuKey';
+import { describeError } from './errors';
 
 /**
  * Module "sesi resep": pemilik TUNGGAL siklus hidup membuka satu resep —
@@ -59,9 +60,6 @@ export interface RecipeSession {
 
 const IDLE: RecipeSessionState = { status: 'idle', recipe: null, error: null, menuName: null };
 
-/** Dipakai bila galat tak membawa pesan yang bisa ditampilkan. */
-const GENERIC_ERROR = 'Layanan resep tidak merespons. Coba lagi sebentar lagi.';
-
 /**
  * Nama menu dibandingkan lewat `menuKey` (spasi, tanda baca, besar-kecil huruf
  * diabaikan) — konvensi yang sama dipakai cache, penyaring menu, dan store.
@@ -92,10 +90,9 @@ export function createRecipeSession(fetchRecipe: RecipeFetcher): RecipeSession {
       set({ status: 'ready', recipe, error: null, menuName });
     } catch (error) {
       if (id !== requestId) return;
-      // Pesan kosong dulu membuat layar menampilkan kalimat generik dan sebab
-      // aslinya hilang; kalimat penggantinya kini dimiliki module ini.
-      const message = (error as Error)?.message?.trim() || GENERIC_ERROR;
-      set({ status: 'error', recipe: null, error: message, menuName });
+      // Kalimat galat dimiliki satu module (`services/errors`), bukan ditulis di sini —
+      // supaya kegagalan yang sama berbunyi sama di resep, chat, suara, dan menu.
+      set({ status: 'error', recipe: null, error: describeError(error, 'recipe'), menuName });
     }
   }
 

@@ -1,6 +1,7 @@
 import { chatKroombox } from './ai/transport';
 import { extractJson, extractJsonArray } from './ai/json';
-import { serverFailureText, ServerSideError } from './ai/failures';
+import { ServerSideError } from './ai/failures';
+import { serverFailureText, UserFacingError } from './errors';
 import { isFatalFailure } from './ai/retryPolicy';
 import { normalizeRecipeResponse } from './recipeNormalizer';
 import { normalizeMenuList } from './menuNormalizer';
@@ -30,10 +31,10 @@ import {
 
 function validateSegment(seg: Segment): void {
   if (!seg.ageGroup || !seg.condition) {
-    throw new Error('Pilih kelompok umur dan kondisi khusus.');
+    throw new UserFacingError('Pilih kelompok umur dan kondisi khusus.');
   }
   if (!isConditionAllowed(seg.ageGroup, seg.condition)) {
-    throw new Error('Kombinasi kelompok umur dan kondisi khusus tidak valid.');
+    throw new UserFacingError('Kombinasi kelompok umur dan kondisi khusus tidak valid.');
   }
 }
 
@@ -69,7 +70,7 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
     setCachedRecipe(menuName, seg, recipe);
     return recipe;
   }
-  throw new Error('Resep dari RAG tidak dapat dibaca. Coba lagi.');
+  throw new UserFacingError('Resep dari RAG tidak dapat dibaca. Coba lagi.');
 }
 
 /**
@@ -88,7 +89,7 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
  */
 export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
   validateSegment(req.segment);
-  if (!req.category) throw new Error('Pilih jenis menu terlebih dahulu.');
+  if (!req.category) throw new UserFacingError('Pilih jenis menu terlebih dahulu.');
   const segment = req.segment;
   const category = req.category;
   const target = Math.max(1, req.count ?? 2);
@@ -148,7 +149,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
   if (collected.size === 0) {
     const first = errors.find((error) => error instanceof ServerSideError) ?? errors[0];
     if (first instanceof Error) throw first;
-    throw new Error(NO_NEW_MENU_MESSAGE);
+    throw new UserFacingError(NO_NEW_MENU_MESSAGE);
   }
   const hasil = [...collected.values()];
   if (excluded.size === 0) setCachedMenus(segment, category, hasil);

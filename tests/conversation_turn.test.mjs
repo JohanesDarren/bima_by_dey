@@ -25,8 +25,10 @@ const require = compileForTest({
     'src/services/ai/types.ts',
     'src/services/ai/failures.ts',
     'src/services/assistantReply.ts',
+    'src/services/errors.ts',
     'src/utils/assistantText.ts',
     'src/services/breaker.ts',
+    'src/constants/index.ts',
   ],
   outDir: OUT,
 });
@@ -198,17 +200,17 @@ test('giliran: pemutus arus terbuka → status error, kalimatnya apa adanya (buk
   assert.deepEqual(out.turn, []);
 });
 
-test('giliran: galat kita sendiri (timeout) → kalimat umum yang sama (pemetaan kaya = tiket 05)', async () => {
+test('giliran: timeout → kalimat jujurnya sendiri (bukan lagi "koneksi terputus")', async () => {
   const { start, state } = fakeStream();
   const { result } = runConversationTurn({ prompt: 'prompt', question: 'apa?' }, start);
   state.handlers.onError(new KroomboxTimeoutError('Layanan tidak mengirim data terlalu lama.'));
 
   const out = await result;
   assert.equal(out.status, 'error');
-  assert.equal(out.text, 'Koneksi terputus. Coba lagi.');
+  assert.equal(out.text, 'Layanan tidak mengirim data terlalu lama.');
 });
 
-test('giliran: galat asing → kalimat umum Indonesia yang sama', async () => {
+test('giliran: galat asing → kalimat pengganti konteks percakapan', async () => {
   const { start, state } = fakeStream();
   const { result } = runConversationTurn({ prompt: 'prompt', question: 'apa?' }, start);
   state.handlers.onError(new Error('some low-level JS failure'));
@@ -218,13 +220,13 @@ test('giliran: galat asing → kalimat umum Indonesia yang sama', async () => {
   assert.equal(out.text, 'Koneksi terputus. Coba lagi.');
 });
 
-test('giliran: KroomboxError biasa juga jatuh ke kalimat umum yang sama', async () => {
+test('giliran: KroomboxError biasa → kalimat tetapnya (kegagalan jaringan)', async () => {
   const { start, state } = fakeStream();
   const { result } = runConversationTurn({ prompt: 'prompt', question: 'apa?' }, start);
   state.handlers.onError(new KroomboxError('Layanan RAG mengembalikan jawaban kosong.'));
 
   const out = await result;
-  assert.equal(out.text, 'Koneksi terputus. Coba lagi.');
+  assert.equal(out.text, 'Layanan RAG mengembalikan jawaban kosong.');
 });
 
 test('giliran: onStreamError menerima galat mentah sebelum diterjemahkan', async () => {
@@ -239,7 +241,7 @@ test('giliran: onStreamError menerima galat mentah sebelum diterjemahkan', async
   const out = await result;
   assert.equal(seen.length, 1);
   assert.equal(seen[0], raw, 'galat mentah diteruskan apa adanya untuk pencatatan');
-  assert.equal(out.text, 'Koneksi terputus. Coba lagi.');
+  assert.equal(out.text, 'detail teknis untuk log');
 });
 
 // ---------------------------------------------------------------------------

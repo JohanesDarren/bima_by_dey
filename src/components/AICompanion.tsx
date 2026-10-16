@@ -16,6 +16,7 @@ import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/ai/transport';
 import { runConversationTurn } from '../services/ai/conversationTurn';
+import { describeError } from '../services/errors';
 import { CHAT_MAX_WORDS, CHAT_LOADING_STAGES } from '../utils/assistantText';
 import { buildChefHistory, buildChefMessage } from '../prompts/chefPrompt';
 
@@ -165,10 +166,10 @@ export function AICompanion({
       });
       // Jaring pengaman: kalau janji giliran ditolak (mis. bug di module), jangan
       // biarkan panel tersangkut di status "mengirim" selamanya.
-      turn.result.catch(() => {
+      turn.result.catch((error: unknown) => {
         setStreaming(false);
         streamRef.current = null;
-        writeLastAssistant('Koneksi terputus. Coba kirim lagi.');
+        writeLastAssistant(describeError(error, 'chat'));
       });
     },
     // `messages` ikut jadi dependensi: riwayat percakapan dibangun saat kirim,

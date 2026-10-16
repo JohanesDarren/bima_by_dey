@@ -13,7 +13,7 @@
  * membuka jaringan sendiri, jadi seluruh perilakunya bisa diuji tanpa server.
  */
 import type { HistoryEntry, StreamHandlers, StreamRequest } from './types';
-import { CircuitOpenError } from '../breaker';
+import { describeError } from '../errors';
 import { readAssistantReply } from '../assistantReply';
 
 /**
@@ -73,20 +73,6 @@ export type StreamStarter = (
 ) => { close: () => void };
 
 /**
- * Menerjemahkan galat stream menjadi satu kalimat Indonesia yang siap tampil.
- *
- * Pemutus arus terbuka sudah membawa kalimat Indonesia yang jujur — teruskan apa
- * adanya, jangan diganti "koneksi terputus" yang menyesatkan (server tidak putus,
- * kita sendiri yang menahan permintaan). Untuk galat lain dipakai satu kalimat
- * umum yang sama di chat maupun suara; penerjemahan galat yang lebih lengkap
- * (timeout, kegagalan sisi server, jaringan) adalah urusan tiket 05.
- */
-function describeStreamError(error: Error): string {
-  if (error instanceof CircuitOpenError) return error.message;
-  return 'Koneksi terputus. Coba lagi.';
-}
-
-/**
  * Jalankan satu giliran percakapan. Mengembalikan `result` (janji hasil giliran) dan
  * `close` (batalkan giliran — tombol berhenti / panggilan ditutup).
  */
@@ -133,7 +119,7 @@ export function runConversationTurn(
       },
       onError: (error) => {
         observer.onStreamError?.(error);
-        finish({ status: 'error', text: describeStreamError(error), turn: [] });
+        finish({ status: 'error', text: describeError(error, 'chat'), turn: [] });
       },
     };
 
@@ -153,7 +139,7 @@ export function runConversationTurn(
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       observer.onStreamError?.(err);
-      finish({ status: 'error', text: describeStreamError(err), turn: [] });
+      finish({ status: 'error', text: describeError(err, 'chat'), turn: [] });
     }
   });
 

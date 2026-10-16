@@ -6,7 +6,18 @@ import {
 } from '../../lib/kroomboxConfig';
 import { CircuitBreaker, CircuitOpenError } from '../breaker';
 import { completeJsonSlice } from './json';
-import { humanizeTransportReason, KroomboxError, KroomboxTimeoutError } from './failures';
+import { KroomboxError, KroomboxTimeoutError } from './failures';
+import {
+  BIMA_DROP_SENTENCE,
+  BIMA_TIMEOUT_SENTENCE,
+  CIRCUIT_SENTENCE,
+  EMPTY_REPLY_SENTENCE,
+  httpFailureText,
+  humanizeTransportReason,
+  NETWORK_DROP_SENTENCE,
+  START_FAILED_SENTENCE,
+  TIMEOUT_SENTENCE,
+} from '../errors';
 import type { StreamHandlers, StreamRequest } from './types';
 
 // Bentuk data AI hidup di ./types supaya module murni (giliran percakapan) bisa
@@ -81,9 +92,7 @@ export function streamKroomboxChat(
   // gagalkan seketika supaya pengguna tidak menunggu 60 detik untuk hal yang pasti
   // gagal, dan server yang sudah tumbang tidak ditambah beban.
   if (!chatBreaker.canPass()) {
-    const denied = new CircuitOpenError(
-      'Layanan AI sedang bermasalah. Tunggu sebentar, lalu coba lagi.',
-    );
+    const denied = new CircuitOpenError(CIRCUIT_SENTENCE);
     setTimeout(() => handlers.onError(denied), 0);
     return { close: () => undefined };
   }
@@ -128,7 +137,7 @@ export function streamKroomboxChat(
     clearIdle();
     if (settled) return;
     idleTimer = setTimeout(
-      () => fail(new KroomboxTimeoutError('Layanan tidak mengirim data terlalu lama. Coba lagi.')),
+      () => fail(new KroomboxTimeoutError(TIMEOUT_SENTENCE)),
       CHAT_IDLE_TIMEOUT_MS,
     );
   };
@@ -201,17 +210,16 @@ export function streamKroomboxChat(
     const status = 'xhrStatus' in event ? (event as { xhrStatus?: number }).xhrStatus : 0;
     const rawReason =
       status && status > 0
-        ? `Layanan RAG sedang bermasalah (HTTP ${status}).`
+        ? httpFailureText(status)
         : 'message' in event && typeof (event as { message?: unknown }).message === 'string'
           ? ((event as { message: string }).message as string)
           : event.type === 'timeout'
-            ? 'Timeout menunggu respons BIMA.'
-            : 'Koneksi ke BIMA terputus.';
+            ? BIMA_TIMEOUT_SENTENCE
+            : BIMA_DROP_SENTENCE;
     // Pesan bisa KOSONG (server menutup koneksi tanpa keterangan). Dulu pesan kosong
     // diteruskan apa adanya, sehingga layar kehilangan sebabnya dan menampilkan
     // kalimat generik — sebab aslinya jadi tak pernah terlihat.
-    const reason =
-      humanizeTransportReason(rawReason.trim()) || 'Koneksi ke layanan RAG terputus. Coba lagi.';
+    const reason = humanizeTransportReason(rawReason.trim()) || NETWORK_DROP_SENTENCE;
     // Pertahankan teks parsial (PRD QA scenario 1) + surface error state.
     fail(new KroomboxError(reason));
   });
@@ -268,17 +276,11 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
     const armIdle = () => {
       if (settled) return;
       if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = setTimeout(
-        () => fail('Layanan RAG terlalu lama tidak mengirim data. Coba lagi.', true),
-        IDLE_TIMEOUT_MS,
-      );
+      idleTimer = setTimeout(() => fail(TIMEOUT_SENTENCE, true), IDLE_TIMEOUT_MS);
     };
 
     // Jaring pengaman: batas total walau data menetes terus tanpa pernah lengkap.
-    totalTimer = setTimeout(
-      () => fail('Jawaban RAG tidak kunjung lengkap. Coba lagi.', true),
-      TOTAL_TIMEOUT_MS,
-    );
+    totalTimer = setTimeout(() => fail(TIMEOUT_SENTENCE, true), TOTAL_TIMEOUT_MS);
 
     armIdle();
 
@@ -303,7 +305,7 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
           onDone: () =>
             finish(() => {
               if (!text.trim()) {
-                reject(new KroomboxError('Layanan RAG mengembalikan jawaban kosong. Coba lagi.'));
+                reject(new KroomboxError(EMPTY_REPLY_SENTENCE));
                 return;
               }
               resolve(text);
@@ -317,7 +319,7 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
       // hitung sebagai kegagalan supaya pemutus tetap belajar dari kasus ini.
       chatBreaker.onFailure();
       finish(() =>
-        reject(error instanceof Error ? error : new KroomboxError('Layanan RAG gagal dimulai.')),
+        reject(error instanceof Error ? error : new KroomboxError(START_FAILED_SENTENCE)),
       );
     }
   });
