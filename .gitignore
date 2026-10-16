@@ -50,6 +50,7 @@ yarn-error.*
 # hasil kompilasi sementara uji tests
 tests/.compiled/
 tests/.compiled-cjs/
+tests/.compiled-recipe/
 
 # generated native folders
 /ios

@@ -4,10 +4,10 @@
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Hanya ada satu pemilik state resep (status, resep, galat); layar detail resep tidak lagi menyimpan salinan loading/error sendiri.
-- [ ] Akses langsung ke state store dari dalam layar (`getState()`) hilang.
-- [ ] Riwayat membuka sesi lama tanpa membuat objek MenuItem palsu.
-- [ ] Status loading / gagal-baca / galat bisa diuji tanpa merender layar.
-- [ ] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.
+- [x] Hanya ada satu pemilik state resep (status, resep, galat); layar detail resep tidak lagi menyimpan salinan loading/error sendiri.
+- [x] Akses langsung ke state store dari dalam layar (`getState()`) hilang.
+- [x] Riwayat membuka sesi lama tanpa membuat objek MenuItem palsu.
+- [x] Status loading / gagal-baca / galat bisa diuji tanpa merender layar.
+- [x] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.

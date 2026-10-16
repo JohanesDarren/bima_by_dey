@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -12,83 +12,37 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
 import { Container } from '../components/Container';
 import { useFlowStore } from '../store/flowStore';
+import { recipeSession } from '../services/recipeSessionInstance';
+import { useRecipeSession } from '../hooks/useRecipeSession';
 import { colors, radius, spacing, typography } from '../theme';
-import { menuKey } from '../utils/menuKey';
 import { cleanFoodText } from '../utils/cleanText';
-import type { Recipe } from '../types';
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RecipeDetail'>;
 
 /**
- * Resep dianggap cocok dengan menu yang dibuka bila KUNCINYA sama — spasi, tanda
- * baca, dan besar-kecil huruf diabaikan (utils/menuKey.ts).
+ * Detail resep lengkap: bahan + langkah + mulai masak (alur step-by-step).
  *
- * Kenapa tidak membandingkan nama secara persis: nama pada jawaban AI bisa
- * berbeda tipis dari nama menu (tambah kata, tanda hubung, spasi ganda). Dulu itu
- * membuat resep yang SUDAH berhasil dimuat dibuang, dan layar menampilkan
- * "Resep RAG belum tersedia." tanpa sebab yang jelas.
+ * Layar ini pemakai PASIF dari module sesi resep: ia tidak lagi menyimpan salinan
+ * loading/error sendiri (dulu ada `loading`/`error`/`loadedRecipe` lokal yang bisa
+ * berbeda dari store) dan tidak lagi mengintip store lewat `getState()`. Seluruh
+ * status membuka resep — memuat, siap, gagal — hidup di `services/recipeSession`.
  */
-function sameMenu(a: string | null | undefined, b: string | null | undefined): boolean {
-  if (!a || !b) return false;
-  return menuKey(a) === menuKey(b);
-}
-
-/** Detail resep lengkap: bahan + langkah + mulai masak (alur step-by-step). */
 export function RecipeDetailScreen({ navigation, route }: Props) {
   const { menu } = route.params ?? {};
   const segment = useFlowStore((s) => s.segment);
-  const activeRecipe = useFlowStore((s) => s.activeRecipe);
-  const activeMenu = useFlowStore((s) => s.activeMenu);
-  const loadRecipe = useFlowStore((s) => s.loadRecipe);
+  const { status, recipe, error } = useRecipeSession();
 
   /**
-   * Resep yang BARU SAJA dimuat untuk menu ini. Ditampilkan langsung tanpa
-   * membandingkan nama: nama resep dari AI sering menambah/mengurangi kata dari
-   * nama menu ("Bubur Sorgum Ayam" vs "Bubur Sorgum Ayam Sayur"), dan dulu
-   * perbandingan nama itu membuang resep yang sudah berhasil dimuat — layar
-   * menampilkan "Resep RAG belum tersedia" padahal datanya ada.
+   * Buka sesi resep untuk menu ini. Bila sesi untuk menu yang sama sudah siap/memuat,
+   * module tidak mengambil ulang (membuka ulang resep yang sama tak membayar lama RAG
+   * dua kali). Bila tidak ada menu (dibuka dari snapshot riwayat), sesi sudah diisi
+   * lewat `openSnapshot`, jadi tak ada yang perlu diambil.
    */
-  const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null);
-  /** Resep di store memang milik menu ini, diketahui dari menu yang diminta. */
-  const storeRecipeIsThisMenu = Boolean(menu && activeMenu && sameMenu(activeMenu.name, menu.name));
-  const [loading, setLoading] = useState(() => Boolean(menu && !storeRecipeIsThisMenu));
-  const [error, setError] = useState<string | null>(null);
-  /** Dinaikkan saat pengguna menekan "Coba lagi" → memicu pengambilan ulang. */
-  const [retryKey, setRetryKey] = useState(0);
-  const recipe = activeRecipe;
-
-  const fetchRecipe = useCallback(async () => {
-    if (!menu) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const loaded = await loadRecipe(menu, segment);
-      if (loaded) {
-        setLoadedRecipe(loaded);
-        return;
-      }
-      // Baca galat LANGSUNG dari store saat itu (bukan lewat state global yang
-      // bisa saja sudah ditimpa permintaan lain): pesannya jadi tepat.
-      setError(
-        useFlowStore.getState().recipeError ||
-          'Layanan resep tidak merespons. Coba lagi sebentar lagi.',
-      );
-    } finally {
-      setLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu?.name, segment.ageGroup, segment.condition, loadRecipe]);
-
   useEffect(() => {
-    // Dari Browse: menu diberikan → ambil resep (bila store belum punya resep menu ini).
-    if (!menu) return;
-    if (!storeRecipeIsThisMenu || retryKey > 0) fetchRecipe();
+    if (menu) recipeSession.open(menu.name, segment);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu?.name, retryKey]);
-
-  /** "Coba lagi": naikkan retryKey supaya useEffect memicu pengambilan ulang. */
-  const retry = () => setRetryKey((value) => value + 1);
+  }, [menu?.name, segment.ageGroup, segment.condition]);
 
   // Tidak ada menu & tidak ada resep aktif (mis. deep-link rusak) → fallback.
   if (!menu && !recipe) {
@@ -99,7 +53,14 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const displayRecipe = menu ? (loadedRecipe ?? (storeRecipeIsThisMenu ? recipe : null)) : recipe;
+  /**
+   * Saat dibuka dari menu Beranda, tanyakan status SESI UNTUK MENU INI ke module —
+   * bukan membaca `status` mentah. Satu render pertama (sebelum effect di atas sempat
+   * mengambilnya) sesi bisa saja masih memegang resep MENU LAIN; `statusFor` menjaga
+   * agar resep yang salah tidak sempat berkedip. Saat dibuka dari snapshot (tanpa menu),
+   * pakai status apa adanya.
+   */
+  const displayStatus = menu ? recipeSession.statusFor(menu.name) : status;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -111,41 +72,41 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
         <View style={{ width: 70 }} />
       </View>
 
-      {loading ? (
+      {displayStatus === 'loading' ? (
         <View style={styles.centerBox}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.centerText}>Menyusun resep langkah demi langkah…</Text>
         </View>
-      ) : error ? (
+      ) : displayStatus === 'error' ? (
         <View style={styles.centerBox}>
           <Text style={styles.errorText}>{error}</Text>
           <Text style={styles.centerText}>
             Jawaban hanya ditampilkan ketika layanan RAG tersedia.
           </Text>
-          <Button title="Coba lagi" onPress={retry} style={styles.retry} />
+          <Button title="Coba lagi" onPress={() => recipeSession.retry()} style={styles.retry} />
         </View>
-      ) : displayRecipe ? (
+      ) : recipe ? (
         <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
           <Container>
-            <Text style={styles.title}>{displayRecipe.name}</Text>
+            <Text style={styles.title}>{recipe.name}</Text>
             <View style={styles.metaRow}>
               <View style={styles.metaChip}>
-                <Text style={styles.metaText}>🍽 {displayRecipe.servings} porsi</Text>
+                <Text style={styles.metaText}>🍽 {recipe.servings} porsi</Text>
               </View>
               <View style={styles.metaChip}>
-                <Text style={styles.metaText}>⏱ ±{displayRecipe.totalMinutes} menit</Text>
+                <Text style={styles.metaText}>⏱ ±{recipe.totalMinutes} menit</Text>
               </View>
               <View style={styles.metaChip}>
-                <Text style={styles.metaText}>📋 {displayRecipe.steps.length} langkah</Text>
+                <Text style={styles.metaText}>📋 {recipe.steps.length} langkah</Text>
               </View>
             </View>
 
             <Text style={styles.sectionTitle}>Bahan-bahan</Text>
             <View style={styles.card}>
-              {displayRecipe.ingredients.length === 0 ? (
+              {recipe.ingredients.length === 0 ? (
                 <Text style={styles.muted}>—</Text>
               ) : (
-                displayRecipe.ingredients.map((ing, i) => (
+                recipe.ingredients.map((ing, i) => (
                   <Text key={i} style={styles.ingredient}>
                     {'• '}
                     {cleanFoodText(ing, { notes: 'all' })}
@@ -156,7 +117,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
 
             <Text style={styles.sectionTitle}>Langkah</Text>
             <View style={styles.card}>
-              {displayRecipe.steps.map((s) => (
+              {recipe.steps.map((s) => (
                 <View key={s.order} style={styles.stepRow}>
                   <View style={styles.stepNum}>
                     <Text style={styles.stepNumText}>{s.order}</Text>
@@ -176,7 +137,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
 
             <Button
               title="Lanjut ke Chef AI"
-              onPress={() => navigation.navigate('Cooking', { recipe: displayRecipe })}
+              onPress={() => navigation.navigate('Cooking', { recipe })}
               style={styles.cta}
             />
           </Container>
@@ -187,7 +148,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
           <Text style={styles.centerText}>
             Layanan sedang tidak mengirim resep yang bisa dibaca. Coba lagi.
           </Text>
-          <Button title="Coba lagi" onPress={retry} style={styles.retry} />
+          <Button title="Coba lagi" onPress={() => recipeSession.retry()} style={styles.retry} />
         </View>
       )}
     </SafeAreaView>

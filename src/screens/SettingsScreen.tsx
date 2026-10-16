@@ -6,6 +6,7 @@ import Constants from 'expo-constants';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useFlowStore } from '../store/flowStore';
+import { recipeSession } from '../services/recipeSessionInstance';
 import { localStore } from '../lib/storage';
 import { confirmAsync } from '../utils/confirm';
 import { colors, radius, spacing, typography } from '../theme';
@@ -33,6 +34,7 @@ export function SettingsScreen({ navigation }: Props) {
     localStore.clearAll();
     resetProfile();
     resetFlow();
+    recipeSession.reset();
   };
 
   const displayName = profile?.full_name?.trim() || 'Tamu';
