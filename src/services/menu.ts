@@ -1,90 +1,32 @@
 import { chatKroombox } from './ai/transport';
 import { extractJson, extractJsonArray } from './ai/json';
-import { KroomboxTimeoutError, serverFailureText, ServerSideError } from './ai/failures';
-import { CircuitOpenError } from './breaker';
+import { serverFailureText, ServerSideError } from './ai/failures';
+import { isFatalFailure } from './ai/retryPolicy';
 import { normalizeRecipeResponse } from './recipeNormalizer';
+import { normalizeMenuList } from './menuNormalizer';
 import { getCachedMenus, getCachedRecipe, setCachedMenus, setCachedRecipe } from './cache';
-import type { FoodCategory, MenuItem, Recipe, RecipeRequest, Segment } from '../types';
+import type { MenuItem, Recipe, RecipeRequest, Segment } from '../types';
 import { isConditionAllowed, NO_NEW_MENU_MESSAGE } from '../constants';
 import { menuKey } from '../utils/menuKey';
-import { limitSentences } from '../utils/assistantText';
+import {
+  buildMenuPrompt,
+  buildRecipePrompt,
+  MENU_MAX_TOKENS,
+  RECIPE_MAX_TOKENS,
+} from '../prompts/menuPrompts';
 
 /**
- * Batas token keluaran per jenis permintaan (dipungut dari versi upstream, nilainya
- * dilebarkan). Dipasang longgar dengan sengaja: keluaran resep kita ±2.600 karakter
- * (±800 token), jadi 1.800 memberi ruang lega — kalau dipatok ketat, JSON-nya
- * terpotong dan resepnya malah ditolak lalu minta ulang (menambah waktu tunggu).
+ * Orkestrasi pencarian menu & resep: menyusun permintaan ke server, menjalankannya
+ * (sebagian bersamaan), memakai cache perangkat, dan menerapkan kebijakan berhenti
+ * mengulang saat server macet.
+ *
+ * Isi dipecah ke module yang lebih sempit dengan satu tanggung jawab:
+ *   - prompts/menuPrompts   → teks prompt (murni).
+ *   - services/menuNormalizer → perapian item menu (fungsi murni).
+ *   - services/recipeNormalizer → validasi bentuk resep (fungsi murni).
+ *   - services/cache        → simpanan di perangkat.
+ *   - ai/retryPolicy        → kapan berhenti mengulang.
  */
-const RECIPE_MAX_TOKENS = 1800;
-const MENU_MAX_TOKENS = 900;
-
-const CATEGORY_LABEL: Record<FoodCategory, string> = {
-  main_course: 'main course (makanan utama)',
-  soup: 'soup (berkuah)',
-  dessert: 'dessert (hidangan penutup)',
-  snack: 'snack (kudapan)',
-  beverage: 'beverage (minuman)',
-  other: 'lainnya',
-};
-
-/** Normalisasi kategori bebas dari LLM → enum FoodCategory yang aman. */
-function normalizeCategory(raw: string | undefined | null): FoodCategory {
-  const s = (raw ?? '').toLowerCase();
-  const kw: Record<string, FoodCategory> = {
-    main: 'main_course',
-    'makanan utama': 'main_course',
-    lauk: 'main_course',
-    soup: 'soup',
-    sop: 'soup',
-    kuah: 'soup',
-    dessert: 'dessert',
-    penutup: 'dessert',
-    manis: 'dessert',
-    snack: 'snack',
-    kudapan: 'snack',
-    kue: 'snack',
-    cookies: 'snack',
-    bubur: 'soup',
-    minuman: 'beverage',
-    beverage: 'beverage',
-    drink: 'beverage',
-  };
-  for (const [k, v] of Object.entries(kw)) {
-    if (s.includes(k)) return v;
-  }
-  return 'other';
-}
-
-/** Bersihkan/resapi item menu mentah dari LLM ke MenuItem yang aman. */
-function normalizeMenu(item: Partial<MenuItem>): MenuItem {
-  const nutrition = item.nutrition && typeof item.nutrition === 'object' ? item.nutrition : {};
-  const oneLine = (value: unknown): string => limitSentences(String(value ?? ''), 1);
-  const fewBullets = (value: unknown): string[] =>
-    Array.isArray(value) ? value.slice(0, 2).map((v) => limitSentences(String(v), 1)) : [];
-  return {
-    name: item.name ?? '(tanpa nama)',
-    // Perapian dari versi upstream: deskripsi kartu cukup satu kalimat, kelebihan dan
-    // perhatian maksimal dua butir (masing-masing satu kalimat). Sebelumnya setiap butir
-    // boleh sampai 8 kata tanpa batas jumlah, sehingga kartu di beranda jadi panjang.
-    description: oneLine(item.description ?? ''),
-    nutrition: Object.fromEntries(
-      Object.entries(nutrition).map(([key, value]) => [key, oneLine(value)]),
-    ),
-    strengths: fewBullets(item.strengths),
-    weaknesses: fewBullets(item.weaknesses),
-    category: normalizeCategory(item.category),
-  };
-}
-
-function normMenu(r: MenuItem[]): MenuItem[] {
-  return r.map(normalizeMenu).filter((m) => m.name !== '(tanpa nama)');
-}
-
-function segmentLabel(seg: Segment): string {
-  const age = seg.ageGroup ?? 'Umum';
-  const cond = seg.condition ?? 'Umum';
-  return `Target Umur: [${age}], Kondisi Khusus: [${cond}]`;
-}
 
 function validateSegment(seg: Segment): void {
   if (!seg.ageGroup || !seg.condition) {
@@ -93,54 +35,6 @@ function validateSegment(seg: Segment): void {
   if (!isConditionAllowed(seg.ageGroup, seg.condition)) {
     throw new Error('Kombinasi kelompok umur dan kondisi khusus tidak valid.');
   }
-}
-
-function promptRecipe(menuName: string, seg: Segment): string {
-  // Bentuk keluaran ditaruh di UJUNG pesan. Terukur di lapangan: kalau permintaan JSON
-  // ditulis di awal lalu disusul deretan aturan, model justru menyalin dokumen basis
-  // pengetahuan ("## Konsep Produk …") dan JSON-nya tidak pernah keluar.
-  const bentuk =
-    '{"name": string, "servings": number, "ingredients": [string], "steps": [{"order": number, "title": string, "instruction": string detail, "durationMinutes": number|null}], "totalMinutes": number}';
-  return [
-    `Buatkan resep lengkap dan detail untuk "${menuName}" yang sesuai:`,
-    segmentLabel(seg),
-    '',
-    'Aturan:',
-    '- Pecah resep menjadi langkah detail (5-10 langkah) yang bisa diikuti selangkah demi selangkah.',
-    '- durationMinutes: isi angka menit bila langkah butuh waktu (misal merebus 10 menit, mengungkep 30 menit); null bila instan.',
-    '- Sesuaikan porsi, tekstur, dan bumbu dengan segmentasi.',
-    '- Bahan: SATU baris = nama bahan + jumlah + satuan. DILARANG menulis tanda kurung, angka persen, atau keterangan di belakang bahan. Contoh benar: "150 g tepung sorgum". Contoh salah: "150 g tepung sorgum (±55% dari tepung)".',
-    '- Pakai nama bahan yang lazim di dapur, bukan nama ilmiah atau kode.',
-    '- instruction: satu sampai dua kalimat praktis; sebutkan api, alat, atau tingkat kematangan bila perlu.',
-    '- Setiap langkah WAJIB menyambung hasil langkah sebelumnya dan menyebutkan tindakannya pada hasil itu (mis. "masukkan tumisan bumbu tadi"). DILARANG meninggalkan langkah menggantung tanpa kelanjutan.',
-    '- DILARANG menyebut bahan atau alat yang belum disiapkan di daftar bahan maupun langkah sebelumnya.',
-    '- Semua bahan pada daftar ingredients WAJIB dipakai di langkah; dan setiap bahan yang dipakai di langkah WAJIB ada di daftar ingredients.',
-    '- Setiap kunci JSON WAJIB diapit tanda kutip ganda.',
-    '',
-    'Jawab HANYA JSON ini — mulai langsung dengan { dan akhiri dengan }, tanpa kalimat pembuka, tanpa markdown, tanpa penjelasan sesudahnya:',
-    bentuk,
-    'JANGAN menyalin atau merangkum isi dokumen basis pengetahuan, dan JANGAN menulis judul seperti "Konsep Produk" atau "Catatan Verifikasi". Jangan menyebut harga.',
-  ].join('\n');
-}
-
-function promptSearchRecipe(seg: Segment, category: FoodCategory, excludedNames: string[]): string {
-  return [
-    'Buat 1 rekomendasi menu olahan sorgum.',
-    segmentLabel(seg),
-    `Kategori WAJIB: ${CATEGORY_LABEL[category]}. Menu harus termasuk kategori ini.`,
-    'WAJIB pertimbangkan kelompok umur DAN kondisi khusus secara bersamaan.',
-    excludedNames.length
-      ? `JANGAN memakai menu berikut: ${excludedNames.map((name) => `"${name}"`).join(', ')}. Menu baru WAJIB beda — ganti bahan utama atau jenis sajiannya, jangan hanya ubah nama.`
-      : '',
-    'description: maksimal 2 kalimat pendek (sekitar 25 kata), tanpa tanda kurung dan tanpa angka persen.',
-    'strengths dan weaknesses: maksimal 8 kata per butir.',
-    'nutrition cukup {"calories": number, "protein": number, "fiber": number} — jangan tambah field lain.',
-    'Setiap kunci JSON WAJIB diapit tanda kutip ganda. Jangan menulis analisis harga, alergen, catatan verifikasi, atau skor kelayakan.',
-    '',
-    'Jawab HANYA JSON array berisi TEPAT 1 objek (tanpa teks lain, tanpa markdown fence, tanpa penjelasan sesudah JSON):',
-    '[{"name": string, "description": string, "nutrition": {"calories": number, "protein": number, "fiber": number}, "strengths": [string], "weaknesses": [string], "category": "main_course|soup|dessert|snack|beverage|other"}]',
-    'JANGAN menyalin atau merangkum isi dokumen basis pengetahuan, dan JANGAN menulis judul seperti "Konsep Produk" atau "Catatan Verifikasi". Jangan menyebut harga.',
-  ].join('\n');
 }
 
 /**
@@ -161,7 +55,7 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
   if (cached) return cached;
 
   const r = await chatKroombox({
-    message: promptRecipe(menuName, seg),
+    message: buildRecipePrompt(menuName, seg),
     maxTokens: RECIPE_MAX_TOKENS,
   });
   // Model di sisi server tumbang → berhenti dengan pesan jujur.
@@ -214,7 +108,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
   const mintaSatu = async (): Promise<void> => {
     try {
       const raw = await chatKroombox({
-        message: promptSearchRecipe(segment, category, [
+        message: buildMenuPrompt(segment, category, [
           ...excluded,
           ...[...collected.values()].map((menu) => menu.name),
         ]),
@@ -226,7 +120,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
       if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) return;
       const parsed = extractJsonArray<MenuItem>(raw);
       if (!parsed) return;
-      for (const menu of normMenu(parsed)) {
+      for (const menu of normalizeMenuList(parsed)) {
         const key = menuKey(menu.name);
         if (excluded.has(key) || collected.has(key)) continue;
         collected.set(key, { ...menu, category });
@@ -242,20 +136,12 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
   // Masih kurang dari target (jawaban kembar atau satu permintaan gagal): isi lagi.
   // Kembar itu kejadian biasa — model kadang mengulang menu yang sama walau sudah
   // dilarang. Jadi beri sampai 2 putaran percobaan, TAPI berhenti segera bila
-  // kegagalannya dari model di sisi server ATAU karena waktu habis: mengulang saat
-  // server macet cuma menambah ~1 menit tunggu per putaran tanpa menambah peluang
-  // berhasil (terukur: server yang macet tetap 0 token pada percobaan berikutnya).
+  // kegagalannya tidak layak diulang (server macet / waktu habis / pemutus terbuka):
+  // mengulang saat server macet cuma menambah ~1 menit tunggu per putaran tanpa
+  // menambah peluang berhasil (terukur: server yang macet tetap 0 token pada
+  // percobaan berikutnya). Kebijakan itu hidup di ai/retryPolicy.
   for (let putaran = 0; putaran < 2 && collected.size < target; putaran += 1) {
-    if (
-      errors.some(
-        (error) =>
-          error instanceof ServerSideError ||
-          error instanceof KroomboxTimeoutError ||
-          error instanceof CircuitOpenError,
-      )
-    ) {
-      break;
-    }
+    if (errors.some(isFatalFailure)) break;
     await mintaSatu();
   }
 

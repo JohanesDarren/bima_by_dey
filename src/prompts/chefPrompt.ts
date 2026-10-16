@@ -1,6 +1,6 @@
 import type { ChatMessage } from '../types';
 import type { HistoryEntry } from '../services/ai/types';
-import { stripMarkdown } from './cleanText';
+import { stripMarkdown } from '../utils/cleanText';
 
 /**
  * Pembantu percakapan Chef.
@@ -15,6 +15,9 @@ import { stripMarkdown } from './cleanText';
  * Persona tetap wajib ada: tanpa persona, model berubah jadi tukang salin teks
  * basis pengetahuan — pernah kejadian, ditanya pengganti merica, jawabannya
  * tempelan bagian "Konsep Produk" dari dokumen RAG.
+ *
+ * Sejak tiket 04, seluruh penyusunan prompt (menu & resep di ./menuPrompts, chat &
+ * suara di sini) berkumpul di folder src/prompts.
  */
 
 /** Jumlah pesan riwayat terakhir yang ikut dikirim (3 tanya + 3 jawab). Dipakai chat & panggilan suara. */

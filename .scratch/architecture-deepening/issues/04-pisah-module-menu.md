@@ -4,9 +4,9 @@
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Pembangun prompt, penorma, dan orkestrasi berada di module terpisah dengan interface sempit masing-masing.
-- [ ] Bagian murni (pembangun prompt + penorma) bisa diuji tanpa jaringan.
-- [ ] Kebijakan "kapan berhenti mengulang saat server macet" hidup di satu tempat, bukan tersebar di call-site.
-- [ ] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.
+- [x] Pembangun prompt, penorma, dan orkestrasi berada di module terpisah dengan interface sempit masing-masing.
+- [x] Bagian murni (pembangun prompt + penorma) bisa diuji tanpa jaringan.
+- [x] Kebijakan "kapan berhenti mengulang saat server macet" hidup di satu tempat, bukan tersebar di call-site.
+- [x] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.

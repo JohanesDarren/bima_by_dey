@@ -17,7 +17,7 @@ import type { ChatMessage } from '../types';
 import { streamKroomboxChat } from '../services/ai/transport';
 import { runConversationTurn } from '../services/ai/conversationTurn';
 import { CHAT_MAX_WORDS, CHAT_LOADING_STAGES } from '../utils/assistantText';
-import { buildChefHistory, buildChefMessage } from '../utils/chefPrompt';
+import { buildChefHistory, buildChefMessage } from '../prompts/chefPrompt';
 
 interface Props {
   context: string;
