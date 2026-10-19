@@ -4,10 +4,10 @@
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Aturan membuang markdown hidup di satu inti, bukan dua salinan dengan aturan berbeda.
-- [ ] Pembersih kolom pendek dan pembersih jawaban panjang sama-sama memakai inti tersebut.
-- [ ] Perilaku kedua pemakai tidak berubah untuk masukan yang sudah didukung hari ini.
-- [ ] Ada tes inti bersama yang mengunci perilaku pembersihan markdown.
-- [ ] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.
+- [x] Aturan membuang markdown hidup di satu inti, bukan dua salinan dengan aturan berbeda.
+- [x] Pembersih kolom pendek dan pembersih jawaban panjang sama-sama memakai inti tersebut.
+- [x] Perilaku kedua pemakai tidak berubah untuk masukan yang sudah didukung hari ini.
+- [x] Ada tes inti bersama yang mengunci perilaku pembersihan markdown.
+- [x] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.

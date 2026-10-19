@@ -9,33 +9,11 @@
  *    lapangan: "150 g tepung sorgum (±55% dari tepung)" — angka persen begitu cuma
  *    menyesatkan pembaca dan tidak dipakai saat memasak.
  *
- * Untuk jawaban chat/panggilan suara dipakai cleanAssistantText
- * (utils/assistantText.ts), yang juga memotong blok "Catatan Verifikasi" dari server.
+ * Aturan membuang markdown ada di inti bersama utils/markdown.ts. Untuk jawaban
+ * chat/panggilan suara dipakai cleanAssistantText (utils/assistantText.ts), yang juga
+ * memotong blok "Catatan Verifikasi" dari server.
  */
-
-/** Buang penanda tingkat baris (judul, kutipan, butir, garis pemisah). */
-function cleanBlockMarkers(line: string): string {
-  return line
-    .replace(/^\s{0,3}#{1,6}\s*/, '')
-    .replace(/^\s{0,3}>\s?/, '')
-    .replace(/^\s*[-*+]\s+/, '• ')
-    .replace(/^\s*([-*_]\s*){3,}$/, '')
-    .replace(/\s+$/, '');
-}
-
-/** Versi teks polos: penanda markdown dibuang, baris & butir dipertahankan. */
-export function stripMarkdown(text: string): string {
-  return text
-    .split('\n')
-    .map(cleanBlockMarkers)
-    .join('\n')
-    .replace(/\*\*|__/g, '')
-    .replace(/`/g, '')
-    .replace(/\*([^*\n]+)\*/g, '$1')
-    .replace(/(^|\s)_([^_\n]+)_/g, '$1$2')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
+import { stripMarkdown } from './markdown';
 
 /** Ciri keterangan yang hanya mengganggu di kolom bahan/langkah. */
 const JUNK_NOTE = [/%/, /^\s*dari\b/i, /(campuran|total|kandungan|setara|catatan|perbandingan)/i];
@@ -84,7 +62,7 @@ export function cleanFoodText(text: string, options: CleanOptions = {}): string 
   const { maxLength = 0, notes = 'junk' } = options;
   const isNoise = (inner: string) => notes === 'all' || isJunkNote(inner);
 
-  const cleaned = stripMarkdown(text)
+  const cleaned = stripMarkdown(text, 'lines')
     .replace(/\(([^()]*)\)/g, (_all, inner: string) => (isNoise(inner) ? ' ' : `(${inner.trim()})`))
     .replace(/\s{2,}/g, ' ')
     .replace(/\s+([,.;:])/g, '$1')

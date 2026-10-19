@@ -53,6 +53,7 @@ tests/.compiled-cjs/
 tests/.compiled-recipe/
 tests/.compiled-menu/
 tests/.compiled-errors/
+tests/.compiled-markdown/
 
 # generated native folders
 /ios

@@ -27,6 +27,7 @@ const require = compileForTest({
     'src/services/ai/failures.ts',
     'src/services/breaker.ts',
     'src/utils/assistantText.ts',
+    'src/utils/markdown.ts',
     'src/utils/cleanText.ts',
   ],
   outDir: OUT,

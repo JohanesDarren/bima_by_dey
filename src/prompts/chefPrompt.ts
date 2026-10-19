@@ -1,6 +1,6 @@
 import type { ChatMessage } from '../types';
 import type { HistoryEntry } from '../services/ai/types';
-import { stripMarkdown } from '../utils/cleanText';
+import { stripMarkdown } from '../utils/markdown';
 
 /**
  * Pembantu percakapan Chef.

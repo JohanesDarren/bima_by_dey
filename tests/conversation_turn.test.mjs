@@ -27,6 +27,7 @@ const require = compileForTest({
     'src/services/assistantReply.ts',
     'src/services/errors.ts',
     'src/utils/assistantText.ts',
+    'src/utils/markdown.ts',
     'src/services/breaker.ts',
     'src/constants/index.ts',
   ],

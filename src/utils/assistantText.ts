@@ -1,3 +1,5 @@
+import { stripMarkdown, stripMarkerChars } from './markdown';
+
 /**
  * Awal blok dokumen internal server yang ikut tercetak di balasan: "Konsep Produk"
  * (deskripsi dokumen basis pengetahuan), "Catatan Verifikasi"/"Skor kelayakan"
@@ -115,12 +117,7 @@ export const VOICE_LOADING_STAGES = [
 ];
 
 export function cleanAssistantText(value: string, options?: { maxWords?: number }): string {
-  const cleaned = cutVerificationBlock(value)
-    .replace(/```[\s\S]*?```/g, (block) => block.replace(/```\w*|```/g, ''))
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/[*_`>#~|]/g, '')
-    .replace(/^\s*(?:[-+•]|\d+[.)])\s+/gm, '')
+  const cleaned = stripMarkdown(cutVerificationBlock(value), 'inline')
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
     .replace(/[\u200B-\u200D\uFE0E\uFE0F]/g, '')
     .replace(/[ \t]+/g, ' ')
@@ -140,11 +137,7 @@ export function cleanAssistantText(value: string, options?: { maxWords?: number 
   if (out) return out;
   // Jaring pengaman terakhir: JANGAN pernah menampilkan balon kosong. Kalau seluruh isi
   // jawaban habis terpotong oleh aturan di atas, tampilkan versi paling sederhana.
-  return value
-    .replace(/```[\s\S]*?```/g, (block) => block.replace(/```\w*|```/g, ''))
-    .replace(/[*_`>#~|]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return stripMarkerChars(value).replace(/\s+/g, ' ').trim();
 }
 
 /**
