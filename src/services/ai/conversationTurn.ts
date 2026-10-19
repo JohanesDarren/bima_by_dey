@@ -72,6 +72,12 @@ export type StreamStarter = (
   handlers: StreamHandlers,
 ) => { close: () => void };
 
+/** Jalankan satu giliran. Bentuk sama dengan `runConversationTurn` dengan stream tertutup. */
+export type TurnRunner = (
+  request: TurnRequest,
+  observer: TurnObserver,
+) => { result: Promise<TurnResult>; close: () => void };
+
 /**
  * Jalankan satu giliran percakapan. Mengembalikan `result` (janji hasil giliran) dan
  * `close` (batalkan giliran — tombol berhenti / panggilan ditutup).

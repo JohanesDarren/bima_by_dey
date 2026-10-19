@@ -4,10 +4,10 @@
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Transisi keadaan panggilan ditentukan oleh satu reducer murni, bukan oleh beberapa efek yang saling terkait.
-- [ ] Akses ke mikrofon/TTS berada di balik satu port; reducer tidak menyentuhnya langsung.
-- [ ] Kelas bug "pendengar lama menyalakan ulang mikrofon sesudah panggilan ditutup" tertutup oleh satu kasus di reducer dan dikunci tes.
-- [ ] Urutan transisi (termasuk galat, mute/unmute yang mempertahankan riwayat, dan berhenti) bisa diuji tanpa perangkat.
-- [ ] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.
+- [x] Transisi keadaan panggilan ditentukan oleh satu reducer murni, bukan oleh beberapa efek yang saling terkait.
+- [x] Akses ke mikrofon/TTS berada di balik satu port; reducer tidak menyentuhnya langsung.
+- [x] Kelas bug "pendengar lama menyalakan ulang mikrofon sesudah panggilan ditutup" tertutup oleh satu kasus di reducer dan dikunci tes.
+- [x] Urutan transisi (termasuk galat, mute/unmute yang mempertahankan riwayat, dan berhenti) bisa diuji tanpa perangkat.
+- [x] `npm run typecheck`, `npm run lint`, dan `npm test` hijau.

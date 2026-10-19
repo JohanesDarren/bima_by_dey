@@ -54,6 +54,7 @@ tests/.compiled-recipe/
 tests/.compiled-menu/
 tests/.compiled-errors/
 tests/.compiled-markdown/
+tests/.compiled-voice/
 
 # generated native folders
 /ios

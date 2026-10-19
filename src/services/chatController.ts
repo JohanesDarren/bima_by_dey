@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../types';
-import type { TurnObserver, TurnRequest, TurnResult } from './ai/conversationTurn';
+import type { TurnRunner } from './ai/conversationTurn';
 import { describeError } from './errors';
 import { CHAT_MAX_WORDS } from '../utils/assistantText';
 import { buildChefHistory, buildChefMessage } from '../prompts/chefPrompt';
@@ -34,12 +34,6 @@ export interface ChatState {
   /** Pertanyaan terakhir yang terkirim — untuk tombol "Ulangi". */
   lastQuestion: string;
 }
-
-/** Jalankan satu giliran. Bentuk sama dengan `runConversationTurn` dengan stream tertutup. */
-export type TurnRunner = (
-  request: TurnRequest,
-  observer: TurnObserver,
-) => { result: Promise<TurnResult>; close: () => void };
 
 export interface ChatSpeech {
   speak(text: string): void;
