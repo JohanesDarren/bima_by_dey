@@ -64,3 +64,4 @@ tests/.compiled-markdown/
 
 # working folder alat lain (bukan bagian aplikasi)
 /.omo/
+tests/.compiled-chat/

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -10,15 +10,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import * as Speech from 'expo-speech';
 import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
-import type { ChatMessage } from '../types';
-import { streamKroomboxChat } from '../services/ai/transport';
-import { runConversationTurn } from '../services/ai/conversationTurn';
-import { describeError } from '../services/errors';
-import { CHAT_MAX_WORDS, CHAT_LOADING_STAGES } from '../utils/assistantText';
-import { buildChefHistory, buildChefMessage } from '../prompts/chefPrompt';
+import { CHAT_LOADING_STAGES } from '../utils/assistantText';
+import { useChatController } from '../hooks/useChatController';
 
 interface Props {
   context: string;
@@ -33,6 +28,12 @@ interface Props {
 
 const SUGGESTIONS = ['Pengganti bahan?', 'Ubah jumlah porsi?', 'Jelaskan langkah ini'];
 
+/**
+ * Panel chat — MURNI tampilan. Percakapan, TTS, dan riwayat hidup di controller
+ * (`services/chatController`, dipasang lewat `useChatController`); komponen ini hanya
+ * merender state-nya dan mengurus hal yang khas layar: keyboard, guliran, dan teks
+ * tahapan menunggu.
+ */
 export function AICompanion({
   context,
   recipeName,
@@ -43,13 +44,12 @@ export function AICompanion({
   onVoiceCall,
   onAssistantMessage,
 }: Props) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [streaming, setStreaming] = useState(false);
-  const [autoSpeak, setAutoSpeak] = useState(!simple);
-  const [lastQuestion, setLastQuestion] = useState('');
+  const [{ messages, input, streaming, autoSpeak, lastQuestion }, chat] = useChatController({
+    context,
+    simple,
+    onAssistantMessage,
+  });
   const scrollRef = useRef<ScrollView>(null);
-  const streamRef = useRef<{ close: () => void } | null>(null);
   /** Keyboard terbuka → panel chat yang mengisi seluruh ruang sisa layar. */
   const [keyboardUp, setKeyboardUp] = useState(false);
   /** Tahapan menunggu jawaban (teks bergantian) — lihat CHAT_LOADING_STAGES. */
@@ -82,106 +82,6 @@ export function AICompanion({
       hideSub.remove();
     };
   }, []);
-
-  useEffect(
-    () => () => {
-      streamRef.current?.close();
-      Speech.stop();
-    },
-    [],
-  );
-
-  const speak = useCallback((text: string) => {
-    Speech.stop();
-    Speech.speak(text.replace(/[*#_`]/g, ''), { language: 'id-ID', rate: 0.95 });
-  }, []);
-
-  const send = useCallback(
-    (overrideText?: string) => {
-      const text = (overrideText ?? input).trim();
-      if (!text || streaming) return;
-      setLastQuestion(text);
-      setInput('');
-      setMessages((current) => [
-        ...current,
-        { role: 'user', content: text },
-        { role: 'assistant', content: '' },
-      ]);
-      setStreaming(true);
-
-      const writeLastAssistant = (content: string) => {
-        setMessages((current) => {
-          const next = [...current];
-          const last = next[next.length - 1];
-          if (last?.role === 'assistant') next[next.length - 1] = { ...last, content };
-          return next;
-        });
-      };
-
-      // Urutan satu giliran (kirim → kumpulkan → baca balasan → galat → riwayat) hidup
-      // di module giliran percakapan; komponen ini hanya mengurus tampilan.
-      const turn = runConversationTurn(
-        {
-          // Susunan pesan (persona + konteks + aturan dasar upstream + tambahan kita +
-          // pertanyaan di ujung) ada di chefPrompt.ts supaya aturannya satu tempat.
-          prompt: buildChefMessage(context, text),
-          question: text,
-          // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
-          history: buildChefHistory(messages),
-          // Kuota token keluaran (dipungut dari versi upstream). 250 ≈ 3x batas 30 kata
-          // kita, jadi longgar untuk jawaban benar dan hanya memotong yang berlarut.
-          maxTokens: 250,
-          maxWords: CHAT_MAX_WORDS,
-        },
-        streamKroomboxChat,
-        {
-          // Balon terisi selagi token mengalir. Module sudah menyaring pesan kegagalan
-          // server, jadi balon tidak pernah menampilkan teks teknis "Error code: 503 …".
-          onPartial: writeLastAssistant,
-        },
-      );
-      streamRef.current = { close: turn.close };
-
-      turn.result.then((out) => {
-        setStreaming(false);
-        streamRef.current = null;
-        if (out.status === 'ok') {
-          writeLastAssistant(out.text);
-          if (autoSpeak) speak(out.text);
-          onAssistantMessage?.(out.text);
-          return;
-        }
-        if (out.status === 'error') {
-          // Buang balon asisten yang masih kosong, lalu sisipkan kalimat galatnya.
-          setMessages((current) => {
-            const next = [...current];
-            const last = next[next.length - 1];
-            if (last?.role === 'assistant' && !last.content) next.pop();
-            return [...next, { role: 'assistant', content: out.text }];
-          });
-          return;
-        }
-        // `empty` / `failure`: satu balon dengan kalimat jujur dari module.
-        writeLastAssistant(out.text);
-      });
-      // Jaring pengaman: kalau janji giliran ditolak (mis. bug di module), jangan
-      // biarkan panel tersangkut di status "mengirim" selamanya.
-      turn.result.catch((error: unknown) => {
-        setStreaming(false);
-        streamRef.current = null;
-        writeLastAssistant(describeError(error, 'chat'));
-      });
-    },
-    // `messages` ikut jadi dependensi: riwayat percakapan dibangun saat kirim,
-    // jadi kalau tidak, yang terkirim bisa riwayat dari render lama (basi).
-    [autoSpeak, context, input, messages, onAssistantMessage, speak, streaming],
-  );
-
-  const stop = () => {
-    streamRef.current?.close();
-    streamRef.current = null;
-    setStreaming(false);
-  };
 
   return (
     <KeyboardAvoidingView
@@ -258,10 +158,7 @@ export function AICompanion({
             accessibilityLabel={
               autoSpeak ? 'Matikan pembacaan jawaban' : 'Aktifkan pembacaan jawaban'
             }
-            onPress={() => {
-              setAutoSpeak((value) => !value);
-              if (autoSpeak) Speech.stop();
-            }}
+            onPress={chat.toggleAutoSpeak}
             style={({ pressed }) => [
               styles.speakToggle,
               autoSpeak && styles.speakToggleOn,
@@ -333,7 +230,7 @@ export function AICompanion({
           {SUGGESTIONS.map((suggestion) => (
             <Pressable
               key={suggestion}
-              onPress={() => send(suggestion)}
+              onPress={() => chat.send(suggestion)}
               disabled={streaming}
               style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
             >
@@ -342,7 +239,7 @@ export function AICompanion({
           ))}
           {lastQuestion && !streaming ? (
             <Pressable
-              onPress={() => send(lastQuestion)}
+              onPress={() => chat.send(lastQuestion)}
               style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
             >
               <MaterialIcons name="refresh" size={14} color={colors.primary} />
@@ -356,15 +253,15 @@ export function AICompanion({
             accessibilityLabel="Pesan untuk pendamping resep"
             style={styles.input}
             value={input}
-            onChangeText={setInput}
+            onChangeText={chat.setInput}
             placeholder={placeholder || 'Tulis pertanyaan…'}
             placeholderTextColor={colors.textSubtle}
-            onSubmitEditing={() => send()}
+            onSubmitEditing={() => chat.send()}
             multiline
           />
           <Pressable
             accessibilityLabel={streaming ? 'Hentikan jawaban' : 'Kirim pesan'}
-            onPress={streaming ? stop : () => send()}
+            onPress={streaming ? chat.stop : () => chat.send()}
             disabled={!streaming && !input.trim()}
             style={({ pressed }) => [
               styles.sendButton,
