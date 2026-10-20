@@ -5,7 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { clearCookHistory, listCookHistory } from '../services/history';
 import type { HistorySession } from '../services/history';
-import { useFlowStore } from '../store/flowStore';
+import { recipeSession } from '../services/recipeSessionInstance';
 import { colors, radius, spacing, typography } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -14,7 +14,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'History'>;
 /** Riwayat sesi masak yang terselesaikan (guest: MMKV lokal). */
 export function HistoryScreen({ navigation }: Props) {
   const [sessions, setSessions] = useState<HistorySession[]>([]);
-  const setActiveRecipe = useFlowStore((s) => s.setActiveRecipe);
 
   useFocusEffect(
     useCallback(() => {
@@ -46,16 +45,11 @@ export function HistoryScreen({ navigation }: Props) {
   };
 
   const openSession = (s: HistorySession) => {
-    // Buka ulang resep tanpa RAG (pakai snapshot).
-    setActiveRecipe(s.recipe, {
-      name: s.recipeName,
-      description: '',
-      nutrition: {},
-      strengths: [],
-      weaknesses: [],
-      category: 'other',
-    });
-    navigation.navigate('RecipeDetail', { menu: undefined });
+    // Buka ulang resep dari SNAPSHOT (tanpa RAG, tanpa mengarang objek menu palsu).
+    // Dulu di sini dibuat MenuItem karangan penuh field kosong hanya agar layar detail
+    // punya sesuatu untuk dibandingkan — sumber kebingungan yang sekarang hilang.
+    recipeSession.openSnapshot(s.recipe);
+    navigation.navigate('RecipeDetail');
   };
 
   return (

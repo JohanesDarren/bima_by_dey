@@ -2,10 +2,7 @@ import { Platform } from 'react-native';
 
 const KEYS = {
   guestMode: 'guest_mode',
-  aiReasoningEnabled: 'ai_reasoning_enabled',
   cachedProfile: 'cached_profile', // JSON of the demographic profile for guests
-  lastUserId: 'last_user_id',
-  guestHistory: 'guest_chat_history',
   cookHistory: 'cook_history',
 } as const;
 
@@ -123,10 +120,6 @@ export function setString(key: string, value: string): void {
   backend.set(key, value);
 }
 
-export function removeKey(key: string): void {
-  backend.delete(key);
-}
-
 // --- App-specific storage API ---------------------------------------------
 
 export const localStore = {
@@ -135,13 +128,6 @@ export const localStore = {
   },
   setGuestMode(value: boolean): void {
     setBoolean(KEYS.guestMode, value);
-  },
-
-  getAiReasoningEnabled(): boolean {
-    return getBoolean(KEYS.aiReasoningEnabled, true);
-  },
-  setAiReasoningEnabled(value: boolean): void {
-    setBoolean(KEYS.aiReasoningEnabled, value);
   },
 
   /** Guest demographic profile persisted locally (survives app restarts). */
@@ -156,21 +142,6 @@ export const localStore = {
   },
   setCachedProfile(value: unknown): void {
     setString(KEYS.cachedProfile, JSON.stringify(value));
-  },
-
-  getLastUserId(): string | undefined {
-    return getString(KEYS.lastUserId);
-  },
-  setLastUserId(id: string): void {
-    setString(KEYS.lastUserId, id);
-  },
-
-  /** Riwayat chat tamu (guest) — disimpan sinkron ke MMKV/localStorage. */
-  getGuestHistory(): string | undefined {
-    return getString(KEYS.guestHistory);
-  },
-  setGuestHistory(value: string): void {
-    setString(KEYS.guestHistory, value);
   },
 
   /** Riwayat sesi masak tamu (list sesi terselesaikan). */
@@ -193,5 +164,3 @@ export const localStore = {
     backend.clearAll();
   },
 };
-
-export { KEYS };

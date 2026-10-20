@@ -1,186 +1,93 @@
 import { create } from 'zustand';
-import type { FoodCategory, MenuItem, MenuLoadingPhase, Recipe, Segment } from '../types';
-import { getRecipe, searchRecipes } from '../services/menu';
+import type { FoodCategory, MenuItem, Segment } from '../types';
+import { searchRecipes } from '../services/menu';
+import { describeError, UserFacingError } from '../services/errors';
+import { MENU_COUNT, NO_NEW_MENU_MESSAGE } from '../constants';
 import { menuKey } from '../utils/menuKey';
 
+/**
+ * Store alur menu (discovery-first): segmentasi terpilih, hasil menu, dan status
+ * memuat/gagalnya.
+ *
+ * Catatan: state RESEP (resep aktif, memuat, galat) TIDAK lagi di sini. Dulu ia
+ * hidup di store ini sekaligus disalin di layar detail resep, dan dua salinan itu
+ * bisa berbeda. Sekarang pemilik tunggalnya adalah module `services/recipeSession`
+ * (lihat hooks/useRecipeSession). Store ini hanya mengurus menu.
+ */
 interface FlowState {
   segment: Segment;
   category: FoodCategory | null;
   menus: MenuItem[];
   loadingMenus: boolean;
-  /** Tahap memuat berjalan: `menus` (menyusun daftar) atau `recipes` (prefetch resep). */
-  loadingPhase: MenuLoadingPhase;
   menusError: string | null;
-  /** Resep terpilih utk layar Cooking (fallback bila nav param tak ada). */
-  activeRecipe: Recipe | null;
-  activeMenu: MenuItem | null;
-  /**
-   * Detail resep hasil prefetch, keyed by menuKey(nama menu). Diisi begitu 3 menu
-   * dibuat, supaya halaman detail tampil langsung tanpa layar muat susulan.
-   */
-  recipeCache: Record<string, Recipe>;
 
   setSegment: (segment: Segment) => void;
   setCategory: (category: FoodCategory | null) => void;
   generateMenus: (segment: Segment, category: FoodCategory, append?: boolean) => Promise<void>;
-  loadRecipe: (menu: MenuItem, segment: Segment) => Promise<Recipe | null>;
-  setActiveRecipe: (recipe: Recipe | null, menu: MenuItem | null) => void;
   reset: () => void;
 }
 
 const DEFAULT_SEGMENT: Segment = { ageGroup: null, condition: null };
 let menuRequestId = 0;
-let recipeRequestId = 0;
-/**
- * Semua permintaan resep yang sedang berjalan. Prefetch dan pembukaan detail
- * berbagi satu promise per menu, jadi RAG tidak ditembak dua kali.
- */
-const recipeInflight = new Map<string, Promise<Recipe>>();
-/** Ditambah saat segment/kategori/state direset agar hasil prefetch basi dibuang. */
-let recipeEpoch = 0;
 
-/**
- * Store untuk alur discovery-first: menahan segmentasi terpilih, hasil menu
- * RAG, dan resep aktif — dibagi antar Browse/RecipeDetail/Cooking/History.
- */
-export const useFlowStore = create<FlowState>((set, get) => {
-  /**
-   * Ambil resep sekali saja: pakai cache bila ada; satukan permintaan yang
-   * sedang berjalan; simpan hasilnya ke cache agar pemanggil berikutnya instan.
-   */
-  const ensureRecipe = (menu: MenuItem, segment: Segment): Promise<Recipe> => {
-    const key = menuKey(menu.name);
-    const cached = get().recipeCache[key];
-    if (cached) return Promise.resolve(cached);
-    const existing = recipeInflight.get(key);
-    if (existing) return existing;
-    const epoch = recipeEpoch;
-    const request = getRecipe(menu.name, segment)
-      .then((recipe) => {
-        if (epoch === recipeEpoch) {
-          set((state) => ({ recipeCache: { ...state.recipeCache, [key]: recipe } }));
-        }
-        return recipe;
-      })
-      .finally(() => {
-        if (recipeInflight.get(key) === request) recipeInflight.delete(key);
-      });
-    recipeInflight.set(key, request);
-    return request;
-  };
+export const useFlowStore = create<FlowState>((set, get) => ({
+  segment: DEFAULT_SEGMENT,
+  category: null,
+  menus: [],
+  loadingMenus: false,
+  menusError: null,
 
-  return {
-    segment: DEFAULT_SEGMENT,
-    category: null,
-    menus: [],
-    loadingMenus: false,
-    loadingPhase: null,
-    menusError: null,
-    activeRecipe: null,
-    activeMenu: null,
-    recipeCache: {},
+  setSegment: (segment) => {
+    menuRequestId += 1;
+    set({ segment, menus: [], loadingMenus: false, menusError: null });
+  },
 
-    setSegment: (segment) => {
-      menuRequestId += 1;
-      recipeEpoch += 1;
-      recipeInflight.clear();
-      set({
+  setCategory: (category) => {
+    menuRequestId += 1;
+    set({ category, menus: [], loadingMenus: false, menusError: null });
+  },
+
+  generateMenus: async (segment, category, append = false) => {
+    const requestId = ++menuRequestId;
+    const previous = append ? get().menus : [];
+    // PENTING: menu lama TIDAK dikosongkan di awal. Dulu `menus: []` dipasang di sini,
+    // jadi ketika permintaan baru gagal, menu yang tadinya sudah tampil ikut hilang dan
+    // pengguna melihat "Menu belum bisa dimuat" padahal sebelumnya baik-baik saja.
+    // Sekarang daftar baru dipasang hanya setelah hasilnya benar-benar berhasil.
+    set({ loadingMenus: true, menusError: null });
+    try {
+      const generated = await searchRecipes({
         segment,
-        menus: [],
-        loadingMenus: false,
-        loadingPhase: null,
-        menusError: null,
-        recipeCache: {},
-      });
-    },
-
-    setCategory: (category) => {
-      menuRequestId += 1;
-      recipeEpoch += 1;
-      recipeInflight.clear();
-      set({
         category,
-        menus: [],
-        loadingMenus: false,
-        loadingPhase: null,
-        menusError: null,
-        recipeCache: {},
+        count: MENU_COUNT,
+        excludedNames: previous.map((menu) => menu.name),
       });
-    },
+      if (requestId !== menuRequestId) return;
+      // Sebagian hasil tetap berguna: tampilkan yang ada, jangan dibuang.
+      // (Server mengirim jawaban sekaligus di akhir, jadi tidak ada gunanya
+      // menampilkan bertahap — semua menu muncul bersama di sini.)
+      if (generated.length === 0) throw new UserFacingError(NO_NEW_MENU_MESSAGE);
+      const seen = new Set(previous.map((menu) => menuKey(menu.name)));
+      const unique = generated.filter((menu) => !seen.has(menuKey(menu.name)));
+      if (unique.length === 0) throw new UserFacingError(NO_NEW_MENU_MESSAGE);
+      set({ menus: [...previous, ...unique], loadingMenus: false, segment, category });
+    } catch (e) {
+      if (requestId !== menuRequestId) return;
+      // Kalimat galat dari satu module (`services/errors`): kegagalan berkelas membawa
+      // sebabnya sendiri, galat lain jatuh ke kalimat pengganti konteks menu.
+      // Menu lama dibiarkan utuh: yang gagal cuma permintaan barunya.
+      set({ loadingMenus: false, menusError: describeError(e, 'menu') });
+    }
+  },
 
-    generateMenus: async (segment, category, append = false) => {
-      const requestId = ++menuRequestId;
-      const previous = append ? get().menus : [];
-      set({ loadingMenus: true, loadingPhase: 'menus', menusError: null });
-      try {
-        const generated = await searchRecipes({
-          segment,
-          category,
-          excludedNames: previous.map((menu) => menu.name),
-        });
-        if (requestId !== menuRequestId) return;
-        const seen = new Set(previous.map((menu) => menuKey(menu.name)));
-        const unique = generated.filter((menu) => !seen.has(menuKey(menu.name))).slice(0, 3);
-        if (unique.length !== 3) throw new Error('RAG belum menghasilkan 3 menu baru. Coba lagi.');
-        // Prefetch detail resep tiap menu sebelum menu ditampilkan. Pengguna
-        // menunggu sekali di sini, lalu halaman detail terbuka penuh seketika.
-        // Satu resep gagal tidak menggagalkan daftar menu — menu itu dimuat
-        // on-demand dari layar detail.
-        // Daftar sudah didapat; sisanya menyiapkan detail resep tiap menu.
-        set({ loadingPhase: 'recipes' });
-        await Promise.all(unique.map((menu) => ensureRecipe(menu, segment).catch(() => null)));
-        if (requestId !== menuRequestId) return;
-        set({
-          menus: [...previous, ...unique],
-          loadingMenus: false,
-          loadingPhase: null,
-          segment,
-          category,
-        });
-      } catch (e) {
-        if (requestId !== menuRequestId) return;
-        set({ loadingMenus: false, loadingPhase: null, menusError: (e as Error).message });
-      }
-    },
-
-    loadRecipe: async (menu, segment) => {
-      const requestId = ++recipeRequestId;
-      const cached = get().recipeCache[menuKey(menu.name)];
-      if (cached) {
-        set({ activeRecipe: cached, activeMenu: menu, menusError: null });
-        return cached;
-      }
-      set({ activeRecipe: null, activeMenu: menu, menusError: null });
-      try {
-        const recipe = await ensureRecipe(menu, segment);
-        if (requestId !== recipeRequestId) return null;
-        set({ activeRecipe: recipe, activeMenu: menu });
-        return recipe;
-      } catch (e) {
-        if (requestId !== recipeRequestId) return null;
-        set({ menusError: (e as Error).message });
-        return null;
-      }
-    },
-
-    setActiveRecipe: (recipe, menu) => set({ activeRecipe: recipe, activeMenu: menu }),
-
-    reset: () => {
-      menuRequestId += 1;
-      recipeRequestId += 1;
-      recipeEpoch += 1;
-      recipeInflight.clear();
-      set({
-        segment: DEFAULT_SEGMENT,
-        category: null,
-        menus: [],
-        loadingMenus: false,
-        loadingPhase: null,
-        menusError: null,
-        activeRecipe: null,
-        activeMenu: null,
-        recipeCache: {},
-      });
-    },
-  };
-});
+  reset: () => {
+    menuRequestId += 1;
+    set({
+      segment: DEFAULT_SEGMENT,
+      category: null,
+      menus: [],
+      loadingMenus: false,
+      menusError: null,
+    });
+  },
+}));

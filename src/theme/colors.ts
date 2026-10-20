@@ -26,10 +26,6 @@ export const colors = {
   warning: '#B17B29',
   info: '#526D61',
 
-  reasoningBg: '#EEF3ED',
-  reasoningBorder: '#CAD9CC',
-  reasoningText: '#38513E',
-
   border: '#E4E0D8',
   borderStrong: '#C9C2B7',
   overlay: 'rgba(23, 39, 27, 0.68)',

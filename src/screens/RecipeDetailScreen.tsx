@@ -1,66 +1,49 @@
-import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect } from 'react';
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../components/Button';
 import { Container } from '../components/Container';
-import { ChefLoader } from '../components/ChefLoader';
 import { useFlowStore } from '../store/flowStore';
-import { useLoadingNarration } from '../hooks/useLoadingNarration';
-import { menuKey } from '../utils/menuKey';
+import { recipeSession } from '../services/recipeSessionInstance';
+import { RECIPE_UNAVAILABLE_SENTENCE } from '../services/errors';
+import { useRecipeSession } from '../hooks/useRecipeSession';
 import { colors, radius, spacing, typography } from '../theme';
+import { cleanFoodText } from '../utils/cleanText';
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RecipeDetail'>;
 
-/** Detail resep lengkap: bahan + langkah + mulai masak (alur step-by-step). */
+/**
+ * Detail resep lengkap: bahan + langkah + mulai masak (alur step-by-step).
+ *
+ * Layar ini pemakai PASIF dari module sesi resep: ia tidak lagi menyimpan salinan
+ * loading/error sendiri (dulu ada `loading`/`error`/`loadedRecipe` lokal yang bisa
+ * berbeda dari store) dan tidak lagi mengintip store lewat `getState()`. Seluruh
+ * status membuka resep — memuat, siap, gagal — hidup di `services/recipeSession`.
+ */
 export function RecipeDetailScreen({ navigation, route }: Props) {
   const { menu } = route.params ?? {};
   const segment = useFlowStore((s) => s.segment);
-  const activeRecipe = useFlowStore((s) => s.activeRecipe);
-  const loadRecipe = useFlowStore((s) => s.loadRecipe);
-  // Resep yang sudah di-prefetch saat 3 menu dibuat → tampil tanpa layar muat.
-  const cachedRecipe = useFlowStore((s) => (menu ? s.recipeCache[menuKey(menu.name)] : undefined));
+  const { status, recipe, error } = useRecipeSession();
 
-  const [loading, setLoading] = useState(() =>
-    Boolean(menu && !cachedRecipe && (!activeRecipe || activeRecipe.name !== menu.name)),
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [retryKey, setRetryKey] = useState(0);
-  const recipe = activeRecipe;
-  const narration = useLoadingNarration('detail', loading);
-
+  /**
+   * Buka sesi resep untuk menu ini. Bila sesi untuk menu yang sama sudah siap/memuat,
+   * module tidak mengambil ulang (membuka ulang resep yang sama tak membayar lama RAG
+   * dua kali). Bila tidak ada menu (dibuka dari snapshot riwayat), sesi sudah diisi
+   * lewat `openSnapshot`, jadi tak ada yang perlu diambil.
+   */
   useEffect(() => {
-    // Dari Browse: menu diberikan → pakai resep prefetch bila ada, jika tidak
-    // baru ambil on-demand (deep-link / prefetch yang gagal).
-    if (!menu) return;
-    if (cachedRecipe) {
-      loadRecipe(menu, segment);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-    if (recipe && recipe.name === menu.name) {
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    loadRecipe(menu, segment)
-      .then((loaded) => {
-        if (!cancelled && !loaded) {
-          setError(useFlowStore.getState().menusError || 'Resep RAG belum tersedia.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    if (menu) recipeSession.open(menu.name, segment);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu?.name, retryKey, cachedRecipe]);
+  }, [menu?.name, segment.ageGroup, segment.condition]);
 
   // Tidak ada menu & tidak ada resep aktif (mis. deep-link rusak) → fallback.
   if (!menu && !recipe) {
@@ -71,9 +54,14 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const displayRecipe = menu
-    ? (cachedRecipe ?? (recipe?.name === menu.name ? recipe : null))
-    : recipe;
+  /**
+   * Saat dibuka dari menu Beranda, tanyakan status SESI UNTUK MENU INI ke module —
+   * bukan membaca `status` mentah. Satu render pertama (sebelum effect di atas sempat
+   * mengambilnya) sesi bisa saja masih memegang resep MENU LAIN; `statusFor` menjaga
+   * agar resep yang salah tidak sempat berkedip. Saat dibuka dari snapshot (tanpa menu),
+   * pakai status apa adanya.
+   */
+  const displayStatus = menu ? recipeSession.statusFor(menu.name) : status;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -85,44 +73,44 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
         <View style={{ width: 70 }} />
       </View>
 
-      {loading ? (
-        <View style={styles.centerBox} accessibilityLiveRegion="polite">
-          <ChefLoader size={112} accessibilityLabel="Menyiapkan resep" />
-          <Text style={styles.narration}>{narration}</Text>
-          <Text style={styles.centerText}>Menyiapkan resep…</Text>
+      {displayStatus === 'loading' ? (
+        <View style={styles.centerBox}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.centerText}>Menyusun resep langkah demi langkah…</Text>
         </View>
-      ) : error ? (
+      ) : displayStatus === 'error' ? (
         <View style={styles.centerBox}>
           <Text style={styles.errorText}>{error}</Text>
           <Text style={styles.centerText}>
             Jawaban hanya ditampilkan ketika layanan RAG tersedia.
           </Text>
-          <Button
-            title="Coba lagi"
-            onPress={() => {
-              setError(null);
-              setRetryKey((value) => value + 1);
-            }}
-            style={styles.retry}
-          />
+          <Button title="Coba lagi" onPress={() => recipeSession.retry()} style={styles.retry} />
         </View>
-      ) : displayRecipe ? (
+      ) : recipe ? (
         <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
           <Container>
-            <Text style={styles.title}>{displayRecipe.name}</Text>
-            <Text style={styles.metaText}>
-              {displayRecipe.servings} porsi · ±{displayRecipe.totalMinutes} menit ·{' '}
-              {displayRecipe.steps.length} langkah
-            </Text>
+            <Text style={styles.title}>{recipe.name}</Text>
+            <View style={styles.metaRow}>
+              <View style={styles.metaChip}>
+                <Text style={styles.metaText}>🍽 {recipe.servings} porsi</Text>
+              </View>
+              <View style={styles.metaChip}>
+                <Text style={styles.metaText}>⏱ ±{recipe.totalMinutes} menit</Text>
+              </View>
+              <View style={styles.metaChip}>
+                <Text style={styles.metaText}>📋 {recipe.steps.length} langkah</Text>
+              </View>
+            </View>
 
             <Text style={styles.sectionTitle}>Bahan-bahan</Text>
             <View style={styles.card}>
-              {displayRecipe.ingredients.length === 0 ? (
+              {recipe.ingredients.length === 0 ? (
                 <Text style={styles.muted}>—</Text>
               ) : (
-                displayRecipe.ingredients.map((ing, i) => (
+                recipe.ingredients.map((ing, i) => (
                   <Text key={i} style={styles.ingredient}>
-                    {ing}
+                    {'• '}
+                    {cleanFoodText(ing, { notes: 'all' })}
                   </Text>
                 ))
               )}
@@ -130,19 +118,19 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
 
             <Text style={styles.sectionTitle}>Langkah</Text>
             <View style={styles.card}>
-              {displayRecipe.steps.map((s) => (
+              {recipe.steps.map((s) => (
                 <View key={s.order} style={styles.stepRow}>
                   <View style={styles.stepNum}>
                     <Text style={styles.stepNumText}>{s.order}</Text>
                   </View>
                   <View style={styles.stepBody}>
                     <Text style={styles.stepTitle}>
-                      {s.title}
+                      {cleanFoodText(s.title, { maxLength: 60 })}
                       {s.durationMinutes ? (
-                        <Text style={styles.stepTimer}> · {s.durationMinutes} menit</Text>
+                        <Text style={styles.stepTimer}> · ⏱ {s.durationMinutes} menit</Text>
                       ) : null}
                     </Text>
-                    <Text style={styles.stepInstr}>{s.instruction}</Text>
+                    <Text style={styles.stepInstr}>{cleanFoodText(s.instruction)}</Text>
                   </View>
                 </View>
               ))}
@@ -150,15 +138,15 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
 
             <Button
               title="Lanjut ke Chef AI"
-              onPress={() => navigation.navigate('Cooking', { recipe: displayRecipe })}
+              onPress={() => navigation.navigate('Cooking', { recipe })}
               style={styles.cta}
             />
           </Container>
         </ScrollView>
       ) : (
         <View style={styles.centerBox}>
-          <Text style={styles.errorText}>Resep RAG belum tersedia.</Text>
-          <Text style={styles.centerText}>Kembali dan coba lagi setelah layanan pulih.</Text>
+          <Text style={styles.errorText}>{RECIPE_UNAVAILABLE_SENTENCE}</Text>
+          <Button title="Coba lagi" onPress={() => recipeSession.retry()} style={styles.retry} />
         </View>
       )}
     </SafeAreaView>
@@ -184,26 +172,32 @@ const styles = StyleSheet.create({
   content: { paddingVertical: spacing.lg, paddingBottom: spacing.xxl },
   placeholder: { textAlign: 'center', marginTop: spacing.xxl, color: colors.textMuted },
   centerBox: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl },
-  narration: { ...typography.h3, color: colors.text, marginTop: spacing.md, textAlign: 'center' },
-  centerText: { color: colors.textMuted, marginTop: spacing.xs, textAlign: 'center' },
+  centerText: { color: colors.textMuted, marginTop: spacing.md, textAlign: 'center' },
   errorText: { color: colors.danger, fontWeight: '700' },
   title: { ...typography.h2, color: colors.text },
-  metaText: { ...typography.bodySm, color: colors.textMuted, marginTop: spacing.xs },
+  metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, flexWrap: 'wrap' },
+  metaChip: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+  },
+  metaText: { fontSize: 13, color: colors.text, fontWeight: '600' },
   sectionTitle: {
     ...typography.h3,
     color: colors.text,
-    marginTop: spacing.lg,
-    marginBottom: spacing.xs,
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm,
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  ingredient: { ...typography.bodySm, color: colors.text, marginBottom: 4 },
-  stepRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  ingredient: { ...typography.body, color: colors.text, marginBottom: spacing.xs },
+  stepRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
   stepNum: {
     width: 28,
     height: 28,
@@ -217,7 +211,7 @@ const styles = StyleSheet.create({
   stepTitle: { ...typography.body, color: colors.text, fontWeight: '700' },
   stepTimer: { color: colors.primary, fontWeight: '600' },
   stepInstr: { ...typography.bodySm, color: colors.textMuted, marginTop: 2 },
-  cta: { marginTop: spacing.lg },
+  cta: { marginTop: spacing.xl },
   retry: { marginTop: spacing.lg, alignSelf: 'stretch' },
   muted: { color: colors.textMuted },
 });

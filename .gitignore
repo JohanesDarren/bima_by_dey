@@ -45,6 +45,17 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# hasil kompilasi sementara uji .scratch
+.scratch/**/breaker-check/
+# hasil kompilasi sementara uji tests
+tests/.compiled/
+tests/.compiled-cjs/
+tests/.compiled-recipe/
+tests/.compiled-menu/
+tests/.compiled-errors/
+tests/.compiled-markdown/
+tests/.compiled-voice/
+
 # generated native folders
 /ios
 /android
@@ -54,3 +65,4 @@ yarn-error.*
 
 # working folder alat lain (bukan bagian aplikasi)
 /.omo/
+tests/.compiled-chat/

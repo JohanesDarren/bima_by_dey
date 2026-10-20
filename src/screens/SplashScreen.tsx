@@ -17,7 +17,7 @@ try {
   MotiViewSafe = ({ children }: { children: React.ReactNode }) => <View>{children}</View>;
 }
 
-/** Checks Supabase session / local MMKV state before routing (PRD S-01). */
+/** Checks local (MMKV) guest state before routing (PRD S-01). */
 export function SplashScreen() {
   const [reduceMotion, setReduceMotion] = useState(false);
 

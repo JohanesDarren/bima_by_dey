@@ -20,6 +20,30 @@ export const SPECIAL_CONDITIONS: { label: string; value: SpecialCondition; emoji
 export const isUnder18 = (ageGroup: AgeGroup | null): boolean =>
   ageGroup === 'Balita' || ageGroup === 'Anak SD' || ageGroup === 'Remaja';
 
+/**
+ * Berapa menu yang diminta sekali jalan. Tiap menu = SATU permintaan RAG terpisah
+ * yang dijalankan bersamaan.
+ * Dipakai oleh store (jumlah permintaan) DAN layar (teks tombol) supaya tidak
+ * terpisah-pisah dan lupa disamakan saat diubah.
+ *
+ * Diset 1: satu permintaan = satu menu. Kalau diminta lebih dari satu, permintaan
+ * berangkat BERSAMAAN dengan daftar larangan yang masih kosong, jadi promptnya
+ * identik — model sering mengembalikan menu yang sama dan penyaring kembar
+ * menyisakannya jadi satu saja. Ingin menu lain? Tekan "Buat menu lainnya".
+ */
+export const MENU_COUNT: number = 1;
+
+/**
+ * Teks tombol, menyesuaikan jumlah menu. Dipisah supaya saat jumlahnya 1 tidak
+ * terbaca janggal ("Buat 1 menu") dan saat diubah lagi labelnya ikut menyesuaikan.
+ */
+export const MENU_BUTTON_LABEL = MENU_COUNT === 1 ? 'Buat menu' : `Buat ${MENU_COUNT} menu`;
+export const MENU_MORE_BUTTON_LABEL =
+  MENU_COUNT === 1 ? 'Buat menu lainnya' : `Buat ${MENU_COUNT} menu lainnya`;
+
+/** Pesan saat RAG tidak menghasilkan menu baru. Satu sumber, dipakai layanan & store. */
+export const NO_NEW_MENU_MESSAGE = 'RAG belum menghasilkan menu baru. Coba lagi.';
+
 export const isConditionAllowed = (
   ageGroup: AgeGroup | null,
   condition: SpecialCondition,
@@ -28,9 +52,3 @@ export const isConditionAllowed = (
   if (ageGroup === 'Lansia' && condition === 'Busui') return false;
   return true;
 };
-
-/** Stable order used by the kebab menu in Settings — never delete entries. */
-export const SUPPORTED_AGE_GROUP_VALUES: AgeGroup[] = AGE_GROUPS.map((a) => a.value);
-export const SUPPORTED_CONDITION_VALUES: SpecialCondition[] = SPECIAL_CONDITIONS.map(
-  (c) => c.value,
-);
