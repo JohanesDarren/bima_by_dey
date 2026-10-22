@@ -80,10 +80,9 @@ test('buildMenuPrompt: daftar larangan muncul hanya bila ada nama yang dikecuali
   assert.match(p, /JANGAN memakai menu berikut: "Menu A", "Menu B"/);
 });
 
-test('batas token keluaran: resep lebih longgar dari menu', () => {
-  assert.equal(RECIPE_MAX_TOKENS, 1800);
-  assert.equal(MENU_MAX_TOKENS, 900);
-  assert.ok(RECIPE_MAX_TOKENS > MENU_MAX_TOKENS);
+test('batas token keluaran: tidak dipatok (model penalaran butuh ruang untuk berpikir + JSON)', () => {
+  assert.equal(RECIPE_MAX_TOKENS, undefined);
+  assert.equal(MENU_MAX_TOKENS, undefined);
 });
 
 // ---------------------------------------------------------------------------
