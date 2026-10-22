@@ -182,6 +182,15 @@ test('serverFailureText: kegagalan model di sisi server → kalimat siap tampil 
   );
 });
 
+test('serverFailureText: permintaan maaf provider (kendala/timeout) → kegagalan server', () => {
+  assert.equal(
+    serverFailureText(
+      'Maaf, model AI dari provider saat ini mengalami kendala atau *timeout* (tidak mengembalikan respon). Silakan coba lagi atau ganti model di Pengaturan.',
+    ),
+    'Server AI gagal merespons. Coba lagi beberapa menit lagi.',
+  );
+});
+
 test('serverFailureText: balasan normal → null', () => {
   assert.equal(serverFailureText('Tumis bumbu sampai harum, lalu masukkan sorgum.'), null);
 });

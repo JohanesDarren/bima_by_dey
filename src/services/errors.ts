@@ -99,7 +99,7 @@ export function describeError(error: unknown, context: ErrorContext): string {
 }
 
 const SERVER_FAILURE =
-  /(Server AI gagal merespons|Error code:\s*5\d\d|fetch failed|ETIMEDOUT|\b50[234]\b|timed out)/i;
+  /(Server AI gagal merespons|model AI dari provider[^.]*(kendala|timeout)|Error code:\s*5\d\d|fetch failed|ETIMEDOUT|\b50[234]\b|timed out)/i;
 
 /**
  * Kalau balasan server sebenarnya pesan kegagalan modelnya sendiri, kembalikan kalimat
@@ -109,6 +109,10 @@ const SERVER_FAILURE =
  *   {\"delta\": \"Server AI gagal merespons: Error code: 503 - {'error': {'message':
  *   '[commandcode/xiaomi/mimo-v2.6-flash] [502]: fetch failed (cause: ETIMEDOUT)'}}\"}
  * lalu langsung [DONE].
+ *
+ * Bentuk lain (dicatat 2026-10-22), dikirim dalam ±10 detik saat provider kewalahan:
+ *   "Maaf, model AI dari provider saat ini mengalami kendala atau *timeout* (tidak
+ *   mengembalikan respon). Silakan coba lagi atau ganti model di Pengaturan."
  */
 export function serverFailureText(raw: string): string | null {
   if (!SERVER_FAILURE.test(raw)) return null;

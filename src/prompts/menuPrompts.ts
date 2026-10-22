@@ -14,13 +14,18 @@ import type { FoodCategory, Segment } from '../types';
  */
 
 /**
- * Batas token keluaran per jenis permintaan (dipungut dari versi upstream, nilainya
- * dilebarkan). Dipasang longgar dengan sengaja: keluaran resep kita ±2.600 karakter
- * (±800 token), jadi 1.800 memberi ruang lega — kalau dipatok ketat, JSON-nya
- * terpotong dan resepnya malah ditolak lalu minta ulang (menambah waktu tunggu).
+ * Batas token keluaran per jenis permintaan. `undefined` = jangan kirim `max_tokens`,
+ * biarkan server memakai batas bawaannya.
+ *
+ * Sengaja TIDAK dipatok. Model utama di server adalah model penalaran: token
+ * "berpikir"-nya ikut memakan batas ini sebelum satu karakter JSON pun ditulis.
+ * Terukur 2026-10-22 lewat log server: dengan 1.800 (resep) / 900 (menu) model
+ * berhenti `finish_reason=length` — kadang tanpa teks sama sekali (server lalu pindah
+ * ke model cadangan), kadang JSON terpotong di tengah (langsung dikirim → "Resep
+ * tidak dapat dibaca"). Tanpa batas: resep & menu terbaca utuh di semua percobaan.
  */
-export const RECIPE_MAX_TOKENS = 1800;
-export const MENU_MAX_TOKENS = 900;
+export const RECIPE_MAX_TOKENS: number | undefined = undefined;
+export const MENU_MAX_TOKENS: number | undefined = undefined;
 
 const CATEGORY_LABEL: Record<FoodCategory, string> = {
   main_course: 'main course (makanan utama)',
