@@ -12,13 +12,16 @@ import { menuKey } from '../utils/menuKey';
 import { limitSentences } from '../utils/assistantText';
 
 /**
- * Batas token keluaran per jenis permintaan (dipungut dari versi upstream, nilainya
- * dilebarkan). Dipasang longgar dengan sengaja: keluaran resep kita ±2.600 karakter
- * (±800 token), jadi 1.800 memberi ruang lega — kalau dipatok ketat, JSON-nya
- * terpotong dan resepnya malah ditolak lalu minta ulang (menambah waktu tunggu).
+ * Batas token keluaran per jenis permintaan.
+ *
+ * SENGAJA `undefined`: model `deepseek-v4.1-flash` "berpikir" dulu sebelum menjawab,
+ * dan proses berpikir itu ikut menghabiskan jatah token. Dengan batas 1.800/900,
+ * jawaban terpotong (`finish_reason=length`), JSON-nya rusak, lalu aplikasi
+ * melaporkan "Resep tidak dapat dibaca". Tanpa batas, server memakai nilai
+ * bawaannya sendiri dan JSON selesai.
  */
-const RECIPE_MAX_TOKENS = 1800;
-const MENU_MAX_TOKENS = 900;
+const RECIPE_MAX_TOKENS: number | undefined = undefined;
+const MENU_MAX_TOKENS: number | undefined = undefined;
 
 const CATEGORY_LABEL: Record<FoodCategory, string> = {
   main_course: 'main course (makanan utama)',
@@ -217,7 +220,16 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
   let lastError: unknown;
   const excluded = new Set((req.excludedNames ?? []).map(menuKey));
   const collected = new Map<string, MenuItem>();
-  for (let attempt = 0; attempt < 2; attempt++) {
+  /**
+   * Satu per satu sampai target terpenuhi (BUKAN `Promise.all`).
+   *
+   * Jatahnya `target + 2` percobaan: kekurangan hasil itu kejadian biasa — model
+   * kadang mengulang menu yang sama walau sudah dilarang. Tapi berhenti segera bila
+   * kegagalannya tidak layak diulang (server macet / waktu habis), supaya pengguna
+   * tidak menunggu dua kali untuk hasil yang pasti gagal.
+   */
+  const target = 3;
+  for (let attempt = 0; attempt < target + 2 && collected.size < target; attempt++) {
     try {
       const raw = await chatKroombox({
         message: promptSearchRecipe(
@@ -241,7 +253,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
         if (!excluded.has(key) && !collected.has(key)) {
           collected.set(key, { ...menu, category: req.category });
         }
-        if (collected.size === 3) return [...collected.values()];
+        if (collected.size === target) return [...collected.values()];
       }
     } catch (error) {
       if (error instanceof ServerSideError) throw error;

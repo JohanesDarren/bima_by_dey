@@ -1,13 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -266,11 +258,7 @@ export function CookingScreen({ navigation, route }: Props) {
         >
           <Text style={styles.modeBtnText}>{mode === 'chat' ? 'Mode Suara' : 'Mode Chat'}</Text>
         </TouchableOpacity>
-        <Button
-          title={isLast ? 'Selesai' : 'Lanjut'}
-          onPress={goNext}
-          style={styles.nextBtn}
-        />
+        <Button title={isLast ? 'Selesai' : 'Lanjut'} onPress={goNext} style={styles.nextBtn} />
       </View>
 
       {isGuest ? <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text> : null}
@@ -329,7 +317,10 @@ export function CookingScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={styles.detailBody} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            contentContainerStyle={styles.detailBody}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.detailStepRow}>
               <View style={styles.detailStepChip}>
                 <Text style={styles.detailStepChipText}>{step?.order ?? stepIdx + 1}</Text>
@@ -555,7 +546,12 @@ const styles = StyleSheet.create({
   },
   detailCardRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   detailCardTime: { fontSize: 24, fontWeight: '800', color: colors.primary },
-  detailCardDuration: { fontSize: 13, color: colors.textMuted, fontWeight: '600', marginLeft: 'auto' },
+  detailCardDuration: {
+    fontSize: 13,
+    color: colors.textMuted,
+    fontWeight: '600',
+    marginLeft: 'auto',
+  },
   detailCardStatus: { fontSize: 12, color: colors.textMuted, fontWeight: '700' },
   detailBottomBtn: {
     marginTop: spacing.sm,

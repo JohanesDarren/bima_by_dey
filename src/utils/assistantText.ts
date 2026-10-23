@@ -213,4 +213,3 @@ export const COMPACT_RAG_STANDARD = [
   'Jangan mengulang kalimat atau jawaban sebelumnya kecuali pengguna meminta pengulangan.',
   'Jangan gunakan emoji, markdown, ikon, logo, emblem, atau simbol dekoratif.',
 ].join(' ');
-

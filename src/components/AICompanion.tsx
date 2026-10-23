@@ -16,16 +16,24 @@ import { ChefMark } from './ChefMark';
 import { useLoadingNarration } from '../hooks/useLoadingNarration';
 import { colors, radius, spacing, typography } from '../theme';
 import type { ChatMessage } from '../types';
-import { streamKroomboxChat } from '../services/kroombox';
+import { serverFailureText, streamKroomboxChat } from '../services/kroombox';
+import {
+  requestRecordingPermissionsAsync,
+  RecordingPresets,
+  setAudioModeAsync,
+  useAudioRecorder,
+} from 'expo-audio';
+import {
+  isTranscriptionConfigured,
+  transcribeAudio,
+  TranscriptionError,
+  TRANSCRIPTION_MESSAGES,
+} from '../services/speechToText';
 import {
   cleanAssistantText,
   compactAssistantAnswer,
   COMPACT_RAG_STANDARD,
 } from '../utils/assistantText';
-import type {
-  ExpoSpeechRecognitionErrorEvent,
-  ExpoSpeechRecognitionResultEvent,
-} from 'expo-speech-recognition';
 
 type SpeechModule = (typeof import('expo-speech-recognition'))['ExpoSpeechRecognitionModule'];
 type EventSubscription = { remove: () => void };
@@ -51,7 +59,6 @@ export function AICompanion({ context, recipeMeta, placeholder, onAssistantMessa
   const [streaming, setStreaming] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [lastQuestion, setLastQuestion] = useState('');
-  const [recording, setRecording] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   // Status berputar + maskot selama balasan disusun.
   const chatStatus = useLoadingNarration('chat', streaming);
@@ -59,11 +66,16 @@ export function AICompanion({ context, recipeMeta, placeholder, onAssistantMessa
   const streamRef = useRef<{ close: () => void } | null>(null);
   const speechModuleRef = useRef<SpeechModule | null>(null);
   const speechListenersRef = useRef<EventSubscription[]>([]);
+  /** Ditandai saat pengguna menekan berhenti, supaya percobaan ulang yang masih
+   *  menunggu (setTimeout) tidak menghidupkan stream baru setelah dihentikan. */
+  const stopRequestedRef = useRef(false);
+  /** Perekam audio untuk pesan suara (9router STT). */
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const [transcribing, setTranscribing] = useState(false);
 
   const cleanupVoiceMessage = useCallback(() => {
     speechListenersRef.current.forEach((listener) => listener.remove());
     speechListenersRef.current = [];
-    setRecording(false);
   }, []);
 
   useEffect(
@@ -105,91 +117,136 @@ export function AICompanion({ context, recipeMeta, placeholder, onAssistantMessa
       ]);
       setStreaming(true);
       let assistantText = '';
+      let attempt = 0;
+      stopRequestedRef.current = false;
 
-      streamRef.current = streamKroomboxChat(
-        {
-          message: [
-            context,
-            `Pertanyaan pengguna: ${text}`,
-            COMPACT_RAG_STANDARD,
-            'Berikan jawaban inti pada kalimat pertama. Maksimal 5 kalimat atau 80 kata, ringkas, lengkap, dan relevan.',
-            'Gunakan paragraf biasa. Jangan gunakan emoji, logo, emblem, ikon, markdown, heading, atau simbol dekoratif.',
-            'Hindari pembuka, pengulangan pertanyaan, dan penutup basa-basi yang tidak perlu.',
-          ].join('\n\n'),
-          useRag: true,
-          stream: true,
-          maxTokens: 250,
-          history,
-        },
-        {
-          onToken: (delta) => {
-            assistantText += delta;
-            const clean = cleanAssistantText(assistantText);
-            setMessages((current) => {
-              const next = [...current];
-              const last = next[next.length - 1];
-              if (last?.role === 'assistant') {
-                next[next.length - 1] = { ...last, content: clean };
-              }
-              return next;
-            });
+      /**
+       * Server kadang mengirim pesan kegagalannya sendiri sebagai "jawaban"
+       * (mis. "Server AI gagal merespons: Error code: 503 …"), lalu [DONE].
+       * Kegagalan itu SEMENTARA — terukur 2026-10-23: permintaan berturut-turut
+       * sukses dalam 3–12 detik. Satu percobaan saja membuat gangguan sekejap
+       * terasa seperti kerusakan permanen, jadi diulang maksimal 3 kali.
+       */
+      const startAttempt = () => {
+        attempt += 1;
+        assistantText = '';
+
+        streamRef.current = streamKroomboxChat(
+          {
+            message: [
+              context,
+              `Pertanyaan pengguna: ${text}`,
+              COMPACT_RAG_STANDARD,
+              'Berikan jawaban inti pada kalimat pertama. Maksimal 5 kalimat atau 80 kata, ringkas, lengkap, dan relevan.',
+              'Gunakan paragraf biasa. Jangan gunakan emoji, logo, emblem, ikon, markdown, heading, atau simbol dekoratif.',
+              'Hindari pembuka, pengulangan pertanyaan, dan penutup basa-basi yang tidak perlu.',
+            ].join('\n\n'),
+            useRag: true,
+            stream: true,
+            maxTokens: 250,
+            history,
           },
-          onDone: () => {
-            setStreaming(false);
-            streamRef.current = null;
-            const clean = compactAssistantAnswer(assistantText, 5, 80);
-            if (!clean) {
+          {
+            onToken: (delta) => {
+              assistantText += delta;
+              const clean = cleanAssistantText(assistantText);
               setMessages((current) => {
                 const next = [...current];
-                if (next[next.length - 1]?.role === 'assistant') next.pop();
+                const last = next[next.length - 1];
+                if (last?.role === 'assistant') {
+                  next[next.length - 1] = { ...last, content: clean };
+                }
+                return next;
+              });
+            },
+            onDone: () => {
+              if (stopRequestedRef.current) return;
+              streamRef.current = null;
+
+              // Kegagalan dari server → ulangi selama jatah tersisa.
+              const failure = serverFailureText(assistantText);
+              if (failure && attempt < 3) {
+                setTimeout(
+                  () => {
+                    if (!stopRequestedRef.current) startAttempt();
+                  },
+                  attempt === 1 ? 400 : 900,
+                );
+                return;
+              }
+
+              setStreaming(false);
+              const clean = compactAssistantAnswer(assistantText, 5, 80);
+
+              if (failure) {
+                setMessages((current) => {
+                  const next = [...current];
+                  if (next[next.length - 1]?.role === 'assistant') next.pop();
+                  return [
+                    ...next,
+                    { role: 'assistant', content: failure, reasoning_content: null },
+                  ];
+                });
+                return;
+              }
+
+              if (!clean) {
+                setMessages((current) => {
+                  const next = [...current];
+                  if (next[next.length - 1]?.role === 'assistant') next.pop();
+                  return [
+                    ...next,
+                    {
+                      role: 'assistant',
+                      content: 'RAG belum memberikan jawaban. Coba lagi.',
+                      reasoning_content: null,
+                    },
+                  ];
+                });
+                return;
+              }
+              if (autoSpeak) speak(clean);
+              onAssistantMessage?.(clean);
+              setMessages((current) => {
+                const last = current[current.length - 1];
+                if (last?.role === 'assistant' && last.content) {
+                  return [...current.slice(0, -1), { ...last, content: clean }];
+                }
+                return current;
+              });
+            },
+            onError: () => {
+              stopRequestedRef.current = true;
+              setStreaming(false);
+              streamRef.current = null;
+              setMessages((current) => {
+                const next = [...current];
+                const last = next[next.length - 1];
+                const partial = last?.role === 'assistant' ? cleanAssistantText(last.content) : '';
+                if (last?.role === 'assistant') next.pop();
                 return [
                   ...next,
                   {
                     role: 'assistant',
-                    content: 'RAG belum memberikan jawaban. Coba lagi.',
+                    content: partial
+                      ? `Jawaban terputus dan mungkin belum lengkap: ${partial}`
+                      : 'Koneksi terputus. Coba kirim lagi.',
                     reasoning_content: null,
                   },
                 ];
               });
-              return;
-            }
-            if (autoSpeak) speak(clean);
-            onAssistantMessage?.(clean);
-            setMessages((current) => {
-              const last = current[current.length - 1];
-              if (last?.role === 'assistant' && last.content) {
-                return [...current.slice(0, -1), { ...last, content: clean }];
-              }
-              return current;
-            });
+            },
           },
-          onError: () => {
-            setStreaming(false);
-            streamRef.current = null;
-            setMessages((current) => {
-              const next = [...current];
-              const last = next[next.length - 1];
-              const partial = last?.role === 'assistant' ? cleanAssistantText(last.content) : '';
-              if (last?.role === 'assistant') next.pop();
-              return [
-                ...next,
-                {
-                  role: 'assistant',
-                  content: partial
-                    ? `Jawaban terputus dan mungkin belum lengkap: ${partial}`
-                    : 'Koneksi terputus. Coba kirim lagi.',
-                  reasoning_content: null,
-                },
-              ];
-            });
-          },
-        },
-      );
+        );
+      };
+
+      startAttempt();
     },
     [autoSpeak, context, input, messages, onAssistantMessage, speak, streaming],
   );
 
   const stop = () => {
+    stopRequestedRef.current = true;
     streamRef.current?.close();
     streamRef.current = null;
     setStreaming(false);
@@ -199,65 +256,56 @@ export function AICompanion({ context, recipeMeta, placeholder, onAssistantMessa
     });
   };
 
+  /**
+   * Rekaman suara → teks lewat 9router, lalu masuk ke jalur chat yang sama.
+   *
+   * Dulu bagian ini memakai pengenal suara bawaan perangkat (expo-speech-recognition).
+   * Sekarang audionya direkam (expo-audio) dan ditranskrip oleh 9router
+   * (`groq/whisper-large-v3`), sesuai permintaan. Hasilnya tetap teks biasa yang
+   * dikirim lewat `send()`, jadi aturan jawaban RAG tidak berubah sedikit pun.
+   */
   const toggleVoiceMessage = useCallback(async () => {
-    if (streaming) return;
-    if (recording) {
-      speechModuleRef.current?.stop();
-      cleanupVoiceMessage();
+    if (streaming || transcribing) return;
+
+    if (recorder.isRecording) {
+      setTranscribing(true);
+      try {
+        await recorder.stop();
+        const uri = recorder.uri;
+        if (!uri) throw new TranscriptionError(TRANSCRIPTION_MESSAGES.emptyAudio);
+        const transcript = await transcribeAudio({ uri, language: 'id' });
+        setInput(transcript);
+        send(transcript);
+      } catch (error) {
+        setVoiceError(
+          error instanceof TranscriptionError ? error.message : TRANSCRIPTION_MESSAGES.failed,
+        );
+      } finally {
+        setTranscribing(false);
+      }
+      return;
+    }
+
+    if (!isTranscriptionConfigured()) {
+      setVoiceError(TRANSCRIPTION_MESSAGES.missingConfig);
       return;
     }
 
     setVoiceError(null);
     try {
-      const imported = await import('expo-speech-recognition');
-      const speechModule = imported.ExpoSpeechRecognitionModule;
-      speechModuleRef.current = speechModule;
-      const permission = await speechModule.requestPermissionsAsync();
+      const permission = await requestRecordingPermissionsAsync();
       if (!permission.granted) {
-        setVoiceError('Izin mikrofon diperlukan.');
+        setVoiceError('Izin mikrofon ditolak. Aktifkan izin mikrofon di pengaturan HP.');
         return;
       }
-
-      cleanupVoiceMessage();
-      const resultListener = speechModule.addListener(
-        'result',
-        (event: ExpoSpeechRecognitionResultEvent) => {
-          const transcript = event.results[0]?.transcript?.trim() ?? '';
-          if (transcript) setInput(transcript);
-          if (event.isFinal && transcript) {
-            cleanupVoiceMessage();
-            try {
-              speechModule.stop();
-            } catch {
-              // Final recognition may stop itself.
-            }
-            send(transcript);
-          }
-        },
-      );
-      const errorListener = speechModule.addListener(
-        'error',
-        (event: ExpoSpeechRecognitionErrorEvent) => {
-          cleanupVoiceMessage();
-          if (event.error !== 'aborted') {
-            setVoiceError(
-              event.error === 'no-speech' || event.error === 'speech-timeout'
-                ? 'Suara belum terdengar. Coba lagi.'
-                : 'Pesan suara gagal direkam.',
-            );
-          }
-        },
-      );
-      const endListener = speechModule.addListener('end', cleanupVoiceMessage);
-      speechListenersRef.current = [resultListener, errorListener, endListener];
-      setRecording(true);
-      speechModule.start({ lang: 'id-ID', interimResults: true, continuous: false });
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
     } catch (error: unknown) {
       console.warn('[AICompanion] Voice message unavailable', error);
-      cleanupVoiceMessage();
-      setVoiceError('Pesan suara tidak tersedia di perangkat ini.');
+      setVoiceError(TRANSCRIPTION_MESSAGES.failed);
     }
-  }, [cleanupVoiceMessage, recording, send, streaming]);
+  }, [recorder, send, streaming, transcribing]);
 
   return (
     <KeyboardAvoidingView
@@ -388,29 +436,38 @@ export function AICompanion({ context, recipeMeta, placeholder, onAssistantMessa
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder={recording ? 'Sedang mendengarkan…' : placeholder || 'Tulis pertanyaan…'}
+            placeholder={
+              recorder.isRecording
+                ? 'Sedang merekam… ketuk untuk berhenti'
+                : transcribing
+                  ? 'Mengubah suara menjadi teks…'
+                  : placeholder || 'Tulis pertanyaan…'
+            }
             placeholderTextColor={colors.textSubtle}
             onSubmitEditing={() => send()}
-            editable={!recording}
+            editable={!recorder.isRecording && !transcribing}
             multiline
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={recording ? 'Hentikan pesan suara' : 'Kirim pesan suara'}
-            accessibilityState={{ selected: recording, disabled: streaming }}
+            accessibilityLabel={recorder.isRecording ? 'Hentikan pesan suara' : 'Kirim pesan suara'}
+            accessibilityState={{
+              selected: recorder.isRecording,
+              disabled: streaming || transcribing,
+            }}
             onPress={toggleVoiceMessage}
             disabled={streaming}
             style={({ pressed }) => [
               styles.voiceButton,
-              recording && styles.voiceButtonRecording,
+              recorder.isRecording && styles.voiceButtonRecording,
               streaming && styles.sendDisabled,
               pressed && styles.pressed,
             ]}
           >
             <MaterialIcons
-              name={recording ? 'stop' : 'mic'}
+              name={recorder.isRecording ? 'stop' : transcribing ? 'hourglass-top' : 'mic'}
               size={20}
-              color={recording ? colors.white : colors.primary}
+              color={recorder.isRecording ? colors.white : colors.primary}
             />
           </Pressable>
           <Pressable
