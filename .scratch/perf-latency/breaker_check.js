@@ -37,7 +37,9 @@ let failures = 0;
 const check = (label, actual, expected) => {
   const ok = JSON.stringify(actual) === JSON.stringify(expected);
   if (!ok) failures += 1;
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}  (dapat=${JSON.stringify(actual)} harap=${JSON.stringify(expected)})`);
+  console.log(
+    `${ok ? 'PASS' : 'FAIL'}  ${label}  (dapat=${JSON.stringify(actual)} harap=${JSON.stringify(expected)})`,
+  );
 };
 
 // Jam palsu supaya bisa memajukan waktu tanpa menunggu.
@@ -75,17 +77,26 @@ now += 61_000;
 b.onSuccess();
 check('probe sukses: CLOSED', [b.getState(), b.canPass()], ['closed', true]);
 b.onFailure();
-check('setelah sukses, hitungan direset (1 gagal tetap CLOSED)', [b.getState(), b.canPass()], ['closed', true]);
+check(
+  'setelah sukses, hitungan direset (1 gagal tetap CLOSED)',
+  [b.getState(), b.canPass()],
+  ['closed', true],
+);
 
 // Skenario 4: onAbort melepas slot half-open supaya tidak macet
 const b2 = new CircuitBreaker({ failureThreshold: 2, openMs: 1_000, now: clock });
-b2.onFailure(); b2.onFailure();
+b2.onFailure();
+b2.onFailure();
 check('b2: 2 gagal → OPEN', b2.getState(), 'open');
 now += 1_001;
 {
   const first = b2.canPass();
   const second = b2.canPass();
-  check('b2: HALF-OPEN, probe dipegang', [b2.getState(), first, second], ['half-open', true, false]);
+  check(
+    'b2: HALF-OPEN, probe dipegang',
+    [b2.getState(), first, second],
+    ['half-open', true, false],
+  );
 }
 b2.onAbort();
 check('b2: abort melepas slot → probe baru diizinkan', b2.canPass(), true);

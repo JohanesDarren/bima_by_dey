@@ -2,7 +2,7 @@
   "expo": {
     "name": "sorgumcore",
     "slug": "sorgumcore",
-    "version": "1.7.0",
+    "version": "1.24.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -12,8 +12,10 @@
         "backgroundColor": "#FFF3E6"
       },
       "package": "com.dey.bimabydey",
-      "versionCode": 8,
-      "permissions": ["android.permission.RECORD_AUDIO"]
+      "versionCode": 23,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "ios": {
       "supportsTablet": true,
@@ -27,7 +29,9 @@
           "resizeMode": "contain",
           "backgroundColor": "#FFF3E6"
         }
-      ]
+      ],
+      "expo-audio",
+      "expo-asset"
     ]
   }
 }

@@ -14,6 +14,18 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import { CHAT_LOADING_STAGES } from '../utils/assistantText';
 import { useChatController } from '../hooks/useChatController';
+import {
+  requestRecordingPermissionsAsync,
+  useAudioRecorder,
+  RecordingPresets,
+  setAudioModeAsync,
+} from 'expo-audio';
+import {
+  isTranscriptionConfigured,
+  transcribeAudio,
+  TranscriptionError,
+  TRANSCRIPTION_MESSAGES,
+} from '../services/speechToText';
 
 interface Props {
   context: string;
@@ -54,6 +66,60 @@ export function AICompanion({
   const [keyboardUp, setKeyboardUp] = useState(false);
   /** Tahapan menunggu jawaban (teks bergantian) — lihat CHAT_LOADING_STAGES. */
   const [loadingStage, setLoadingStage] = useState(0);
+  /** Rekaman suara → teks (9router). Bukan fitur RAG; hanya cara mengisi kotak pesan. */
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const [transcribing, setTranscribing] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  /**
+   * Satu tombol: ketuk untuk mulai merekam, ketuk lagi untuk berhenti lalu kirim.
+   * Transkrip masuk ke kotak pesan dan langsung dikirim lewat jalur chat yang sama,
+   * sehingga aturan jawaban (RAG, panjang, anti-halusinasi) tetap satu.
+   */
+  const toggleRecording = async () => {
+    if (transcribing) return;
+    setMicError(null);
+
+    if (recorder.isRecording) {
+      setTranscribing(true);
+      try {
+        await recorder.stop();
+        const uri = recorder.uri;
+        if (!uri) throw new TranscriptionError(TRANSCRIPTION_MESSAGES.emptyAudio);
+        const text = await transcribeAudio({ uri, language: 'id' });
+        chat.setInput(text);
+        chat.send(text);
+      } catch (error) {
+        setMicError(
+          error instanceof TranscriptionError ? error.message : TRANSCRIPTION_MESSAGES.failed,
+        );
+      } finally {
+        setTranscribing(false);
+      }
+      return;
+    }
+
+    if (!isTranscriptionConfigured()) {
+      setMicError(TRANSCRIPTION_MESSAGES.missingConfig);
+      return;
+    }
+
+    try {
+      // Izin mikrofon diminta saat tombol ditekan, bukan saat panel dibuat — supaya
+      // pengguna melihat konteksnya. Tanpa ini recorder.prepareToRecordAsync() gagal
+      // senyap di perangkat yang belum pernah memberi izin.
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        setMicError('Izin mikrofon ditolak. Aktifkan izin mikrofon di pengaturan HP.');
+        return;
+      }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+    } catch {
+      setMicError(TRANSCRIPTION_MESSAGES.failed);
+    }
+  };
 
   useEffect(() => {
     if (!streaming) {
@@ -275,7 +341,32 @@ export function AICompanion({
               <MaterialIcons name="arrow-upward" size={19} color={colors.primaryDark} />
             )}
           </Pressable>
+          <Pressable
+            accessibilityLabel={
+              recorder.isRecording ? 'Berhenti merekam dan kirim' : 'Rekam pertanyaan'
+            }
+            accessibilityState={{ busy: transcribing, selected: recorder.isRecording }}
+            onPress={toggleRecording}
+            disabled={streaming || transcribing}
+            style={({ pressed }) => [
+              styles.micButton,
+              recorder.isRecording && styles.micButtonActive,
+              (streaming || transcribing) && styles.sendDisabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <MaterialIcons
+              name={recorder.isRecording ? 'stop' : transcribing ? 'hourglass-top' : 'mic'}
+              size={19}
+              color={recorder.isRecording ? colors.surface : colors.primaryDark}
+            />
+          </Pressable>
         </View>
+        {micError ? (
+          <Text style={styles.micError} accessibilityLiveRegion="polite">
+            {micError}
+          </Text>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -457,5 +548,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendDisabled: { opacity: 0.38 },
+  micButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  micButtonActive: { backgroundColor: colors.danger, borderColor: colors.danger },
+  micError: {
+    ...typography.caption,
+    color: colors.danger,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
   pressed: { opacity: 0.7 },
 });

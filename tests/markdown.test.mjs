@@ -93,7 +93,10 @@ test('cleanFoodText: markdown dibuang, keterangan kurung sampah dibuang', () => 
     assert.equal(cleanFoodText(input), expected, JSON.stringify(input));
   }
   assert.equal(cleanFoodText('1 sdt garam (halus)', { notes: 'all' }), '1 sdt garam');
-  assert.equal(cleanFoodText('Kocok telur sampai mengembang dan pucat', { maxLength: 20 }), 'Kocok telur sampai…');
+  assert.equal(
+    cleanFoodText('Kocok telur sampai mengembang dan pucat', { maxLength: 20 }),
+    'Kocok telur sampai…',
+  );
 });
 
 // ---------------------------------------------------------------------------
