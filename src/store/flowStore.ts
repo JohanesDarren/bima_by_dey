@@ -108,6 +108,13 @@ export const useFlowStore = create<FlowState>((set, get) => {
       });
     },
 
+    /**
+     * Ambil SATU menu baru lalu tambahkan ke daftar.
+     *
+     * Alur yang diminta: sekali tekan → satu menu muncul → tombol berikutnya
+     * tersedia untuk menambah satu lagi. Bukan tiga sekaligus. Jadi tiap tekan
+     * hanya meminta satu menu, dan daftar lama tidak pernah dikosongkan.
+     */
     generateMenus: async (segment, category, append = false) => {
       const requestId = ++menuRequestId;
       const previous = append ? get().menus : [];
@@ -117,6 +124,7 @@ export const useFlowStore = create<FlowState>((set, get) => {
           segment,
           category,
           excludedNames: previous.map((menu) => menu.name),
+          limit: 1,
         });
         if (requestId !== menuRequestId) return;
         const seen = new Set(previous.map((menu) => menuKey(menu.name)));

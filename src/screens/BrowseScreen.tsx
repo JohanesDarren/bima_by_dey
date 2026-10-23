@@ -145,8 +145,8 @@ export function BrowseScreen({ navigation }: Props) {
               <Pressable
                 key={item.label}
                 accessibilityRole="radio"
-                accessibilityState={{ selected, disabled: !segmentReady || loadingMenus }}
-                disabled={!segmentReady || loadingMenus || item.value === null}
+                accessibilityState={{ selected, disabled: loadingMenus }}
+                disabled={loadingMenus || item.value === null}
                 onPress={() => item.value && setCategory(item.value)}
                 style={({ pressed }) => [
                   styles.category,
@@ -163,7 +163,7 @@ export function BrowseScreen({ navigation }: Props) {
         </View>
 
         <Button
-          title="Buat 3 menu"
+          title="Buat menu"
           onPress={() => generate(false)}
           disabled={!segmentReady || !category || loadingMenus}
           loading={showingLoader}
@@ -211,7 +211,7 @@ export function BrowseScreen({ navigation }: Props) {
               />
             ))}
             <Button
-              title="Buat 3 menu lainnya"
+              title="Buat menu lainnya"
               onPress={() => generate(true)}
               loading={loadingMenus}
               disabled={loadingMenus}

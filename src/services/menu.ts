@@ -215,7 +215,7 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
 /**
  * Cari resep lain via AI sesuai kebutuhan + kategori (RAG, non-streaming).
  */
-export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
+export async function searchRecipes(req: RecipeRequest & { limit?: number }): Promise<MenuItem[]> {
   validateSegment(req.segment);
   if (!req.category) throw new Error('Pilih jenis menu terlebih dahulu.');
   let lastError: unknown;
@@ -229,8 +229,14 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
    * kegagalannya tidak layak diulang (server macet / waktu habis), supaya pengguna
    * tidak menunggu dua kali untuk hasil yang pasti gagal.
    */
-  const target = 3;
-  for (let attempt = 0; attempt < target + 2 && collected.size < target; attempt++) {
+  const target = Math.max(1, req.limit ?? 3);
+  /**
+   * Saat target = 1 (alur "satu menu per tekan"), cukup SATU permintaan: kalau
+   * gagal, pemanggil menampilkan galat dan pengguna bisa menekan lagi. Mengulang
+   * di dalam sini hanya membuat tombol terasa menggantung.
+   */
+  const maxAttempts = target === 1 ? 1 : target + 2;
+  for (let attempt = 0; attempt < maxAttempts && collected.size < target; attempt++) {
     try {
       const raw = await chatKroombox({
         message: promptSearchRecipe(
