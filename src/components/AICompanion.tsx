@@ -16,7 +16,11 @@ import { ChefMark } from './ChefMark';
 import { useLoadingNarration } from '../hooks/useLoadingNarration';
 import { colors, radius, spacing, typography } from '../theme';
 import type { ChatMessage } from '../types';
-import { serverFailureText, streamKroomboxChat } from '../services/kroombox';
+import {
+  looksLikeServerFailure,
+  serverFailureText,
+  streamKroomboxChat,
+} from '../services/kroombox';
 import {
   requestRecordingPermissionsAsync,
   RecordingPresets,
@@ -149,6 +153,18 @@ export function AICompanion({ context, recipeMeta, placeholder, onAssistantMessa
           {
             onToken: (delta) => {
               assistantText += delta;
+              // Jangan tampilkan teks kegagalan server sebagai jawaban. Delta bisa
+              // tiba beberapa potong, jadi periksa akumulasi: begitu terlihat seperti
+              // pesan galat, kosongkan gelembung dan biarkan percobaan ulang bekerja.
+              if (looksLikeServerFailure(assistantText)) {
+                setMessages((current) => {
+                  const next = [...current];
+                  const last = next[next.length - 1];
+                  if (last?.role === 'assistant') next[next.length - 1] = { ...last, content: '' };
+                  return next;
+                });
+                return;
+              }
               const clean = cleanAssistantText(assistantText);
               setMessages((current) => {
                 const next = [...current];

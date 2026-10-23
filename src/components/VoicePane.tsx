@@ -77,7 +77,22 @@ export function VoicePane({ segment, recipeName, stepLabel, recipeIngredients }:
       <Text style={styles.status} accessibilityLiveRegion="polite">
         {status}
       </Text>
-      <Text style={styles.hint}>Pindah ke mode Chat untuk mengakhiri.</Text>
+
+      {/*
+        Petunjuk pemakaian. Sebelumnya layar ini hanya menampilkan status, sehingga
+        pengguna baru tidak tahu apakah harus bicara, menunggu, atau menekan sesuatu.
+      */}
+      <Text style={styles.hint}>
+        {state === 'listening'
+          ? 'Bicara langsung, lalu berhenti sejenak. Chef AI menjawab dengan suara.'
+          : state === 'thinking'
+            ? 'Tunggu sebentar, jawaban sedang disusun.'
+            : state === 'speaking'
+              ? 'Chef AI sedang berbicara. Tunggu sampai selesai, lalu bicara lagi.'
+              : state === 'error'
+                ? 'Tekan Coba lagi, atau pindah ke mode Chat.'
+                : 'Menyiapkan mikrofon dan suara.'}
+      </Text>
 
       {state === 'error' ? (
         <View style={styles.errorBox}>

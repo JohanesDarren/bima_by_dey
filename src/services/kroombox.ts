@@ -204,6 +204,17 @@ function humanizeTransportReason(reason: string): string {
  * Kalau balasan server sebenarnya pesan kegagalan modelnya sendiri, kembalikan kalimat
  * yang bisa ditampilkan ke pengguna (dengan kode kesalahan). Selain itu null.
  */
+/**
+ * Apakah teks yang sedang mengalir SUDAH terlihat sebagai pesan kegagalan server?
+ *
+ * Dipakai lapisan UI untuk berhenti menampilkan delta ke gelembung jawaban begitu
+ * kegagalan terdeteksi. Tanpa ini, pengguna sempat membaca teks mentah
+ * "Server AI gagal merespons: Error code: 404 …" sebelum percobaan ulang selesai.
+ */
+export function looksLikeServerFailure(raw: string): boolean {
+  return SERVER_FAILURE.test(raw);
+}
+
 export function serverFailureText(raw: string): string | null {
   if (!SERVER_FAILURE.test(raw)) return null;
   const code = raw.match(/\b(50[234])\b/)?.[1];
