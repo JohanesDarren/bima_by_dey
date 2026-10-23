@@ -119,78 +119,98 @@ export function useVoiceCall(
       setErrorMsg(null);
       let response = '';
 
-      streamRef.current = streamKroomboxChat(
-        {
-          message: [
-            VOICE_PERSONA,
-            `Resep: ${recipeRef.current.recipeName || 'belum dipilih'}.`,
-            `Langkah aktif: ${recipeRef.current.stepLabel || 'tidak ada'}.`,
-            `Bahan resep ini: ${recipeRef.current.recipeIngredients || 'belum tercatat'}.`,
-            `Profil: ${segmentRef.current.ageGroup || 'umum'}, ${segmentRef.current.condition || 'umum'}.`,
-            // Aturan dasar versi upstream apa adanya + tambahan kita, disimpan di
-            // chefPrompt.ts supaya bentuk jawaban Chef dan suara tidak berkelahi.
-            ...VOICE_RULES,
-            // Pertanyaan di ujung (bukan di tengah): aturan yang menumpuk SETELAH
-            // pertanyaan membuat jawaban suara melenceng dari yang ditanya.
-            `Pertanyaan: ${text}`,
-          ].join('\n'),
-          // Riwayat percakapan ikut dikirim supaya pertanyaan lanjutan nyambung.
-          history: historyRef.current,
-          useRag: true,
-          stream: true,
-          // Kuota token keluaran (dipungut dari versi upstream); 150 ≈ 3x batas 25 kata.
-          maxTokens: 150,
-        },
-        {
-          onToken: (token) => {
-            response += token;
+      /**
+       * Server kadang mengirim pesan kegagalannya sendiri sebagai "jawaban", lalu
+       * [DONE]. Kegagalan itu SEMENTARA (terukur 2026-10-23: permintaan berturut
+       * sukses dalam 3–12 detik). Satu percobaan membuat gangguan sekejap terasa
+       * permanen, jadi diulang maksimal 3 kali — sama seperti jalur chat.
+       */
+      const startAttempt = (attempt: number) => {
+        response = '';
+
+        streamRef.current = streamKroomboxChat(
+          {
+            message: [
+              VOICE_PERSONA,
+              `Resep: ${recipeRef.current.recipeName || 'belum dipilih'}.`,
+              `Langkah aktif: ${recipeRef.current.stepLabel || 'tidak ada'}.`,
+              `Bahan resep ini: ${recipeRef.current.recipeIngredients || 'belum tercatat'}.`,
+              `Profil: ${segmentRef.current.ageGroup || 'umum'}, ${segmentRef.current.condition || 'umum'}.`,
+              // Aturan dasar versi upstream apa adanya + tambahan kita, disimpan di
+              // chefPrompt.ts supaya bentuk jawaban Chef dan suara tidak berkelahi.
+              ...VOICE_RULES,
+              // Pertanyaan di ujung (bukan di tengah): aturan yang menumpuk SETELAH
+              // pertanyaan membuat jawaban suara melenceng dari yang ditanya.
+              `Pertanyaan: ${text}`,
+            ].join('\n'),
+            history: historyRef.current,
+            useRag: true,
+            stream: true,
+            maxTokens: 150,
           },
-          onDone: () => {
-            streamRef.current = null;
-            if (!activeRef.current) return;
-            // Server kadang mengirim pesan kegagalannya sendiri sebagai "jawaban"
-            // (mis. "Server AI gagal merespons: Error code: 503 …"). Jangan dibacakan
-            // seolah-olah itu jawaban masakan.
-            const failure = serverFailureText(response);
-            if (failure) {
+          {
+            onToken: (token) => {
+              response += token;
+            },
+            onDone: () => {
+              streamRef.current = null;
+              if (!activeRef.current) return;
+
+              const failure = serverFailureText(response);
+
+              // Kegagalan dari server → ulangi selama jatah tersisa.
+              if (failure && attempt < 3) {
+                setTimeout(
+                  () => {
+                    if (activeRef.current) startAttempt(attempt + 1);
+                  },
+                  attempt === 1 ? 400 : 900,
+                );
+                return;
+              }
+
+              if (failure) {
+                processingRef.current = false;
+                setState('error');
+                setErrorMsg(failure);
+                return;
+              }
+              const spoken = cleanAssistantText(response, { maxWords: VOICE_MAX_WORDS });
+              if (!spoken) {
+                processingRef.current = false;
+                setState('error');
+                setErrorMsg('Jawaban suara belum tersedia. Coba lagi.');
+                return;
+              }
+              // Simpan giliran ini supaya pertanyaan berikutnya masih nyambung.
+              const turns: HistoryEntry[] = [
+                { role: 'user', content: text },
+                { role: 'assistant', content: response },
+              ];
+              historyRef.current = [...historyRef.current, ...turns].slice(-VOICE_HISTORY_LIMIT);
+              setState('speaking');
+              Speech.speak(spoken, {
+                language: 'id-ID',
+                voice: voiceRef.current,
+                rate: 0.94,
+                pitch: 1,
+                onDone: resumeListening,
+                onError: resumeListening,
+              });
+            },
+            onError: (error) => {
+              console.warn('[useVoiceCall] AI stream failed', error);
+              streamRef.current = null;
+              if (!activeRef.current) return;
               processingRef.current = false;
               setState('error');
-              setErrorMsg(failure);
-              return;
-            }
-            const spoken = cleanAssistantText(response, { maxWords: VOICE_MAX_WORDS });
-            if (!spoken) {
-              processingRef.current = false;
-              setState('error');
-              setErrorMsg('Jawaban suara belum tersedia. Coba lagi.');
-              return;
-            }
-            // Simpan giliran ini supaya pertanyaan berikutnya masih nyambung.
-            const turns: HistoryEntry[] = [
-              { role: 'user', content: text },
-              { role: 'assistant', content: response },
-            ];
-            historyRef.current = [...historyRef.current, ...turns].slice(-VOICE_HISTORY_LIMIT);
-            setState('speaking');
-            Speech.speak(spoken, {
-              language: 'id-ID',
-              voice: voiceRef.current,
-              rate: 0.94,
-              pitch: 1,
-              onDone: resumeListening,
-              onError: resumeListening,
-            });
+              setErrorMsg('Koneksi ke pendamping resep terganggu. Coba lagi.');
+            },
           },
-          onError: (error) => {
-            console.warn('[useVoiceCall] AI stream failed', error);
-            streamRef.current = null;
-            if (!activeRef.current) return;
-            processingRef.current = false;
-            setState('error');
-            setErrorMsg('Koneksi ke pendamping resep terganggu. Coba lagi.');
-          },
-        },
-      );
+        );
+      };
+
+      startAttempt(1);
     },
     [resumeListening],
   );

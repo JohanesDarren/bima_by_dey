@@ -266,5 +266,9 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
     }
   }
   if (lastError instanceof Error && collected.size === 0) throw lastError;
-  throw new Error('RAG belum menghasilkan 3 menu baru yang berbeda. Coba lagi.');
+  // Kembalikan apa pun yang berhasil dikumpulkan. Dulu di sini selalu melempar
+  // "belum menghasilkan 3 menu" ketika hasilnya kurang dari tiga, sehingga menu
+  // yang SUDAH didapat ikut dibuang dan pengguna melihat daftar kosong.
+  if (collected.size > 0) return [...collected.values()];
+  throw new Error('RAG belum menghasilkan menu baru yang berbeda. Coba lagi.');
 }

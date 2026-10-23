@@ -121,12 +121,18 @@ export const useFlowStore = create<FlowState>((set, get) => {
         if (requestId !== menuRequestId) return;
         const seen = new Set(previous.map((menu) => menuKey(menu.name)));
         const unique = generated.filter((menu) => !seen.has(menuKey(menu.name))).slice(0, 3);
-        if (unique.length !== 3) throw new Error('RAG belum menghasilkan 3 menu baru. Coba lagi.');
+        // Terima berapa pun menu yang berhasil didapat. Dulu di sini ada syarat
+        // "harus tepat 3": ketika server hanya sanggup mengembalikan satu menu,
+        // seluruh hasil dibuang dan pengguna melihat daftar kosong — menu lama pun
+        // ikut hilang karena galat. Sekarang hasil parsial tetap ditampilkan, dan
+        // menu lama dipertahankan saat menambah.
+        if (unique.length === 0) {
+          throw new Error('RAG belum menghasilkan menu baru. Coba lagi.');
+        }
         // Prefetch detail resep tiap menu sebelum menu ditampilkan. Pengguna
         // menunggu sekali di sini, lalu halaman detail terbuka penuh seketika.
         // Satu resep gagal tidak menggagalkan daftar menu — menu itu dimuat
         // on-demand dari layar detail.
-        // Daftar sudah didapat; sisanya menyiapkan detail resep tiap menu.
         set({ loadingPhase: 'recipes' });
         await Promise.all(unique.map((menu) => ensureRecipe(menu, segment).catch(() => null)));
         if (requestId !== menuRequestId) return;
