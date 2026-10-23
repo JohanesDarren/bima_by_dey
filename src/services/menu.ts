@@ -156,24 +156,25 @@ function promptSearchRecipe(
 ): string {
   return [
     ulangi
-      ? 'Balasan sebelumnya SALAH BENTUK (bukan JSON array). Tulis ulang sekarang.'
-      : 'Buat TEPAT 3 rekomendasi menu olahan sorgum.',
+      ? 'Balasan sebelumnya SALAH BENTUK (bukan JSON). Tulis ulang sekarang.'
+      : 'Buat TEPAT 1 rekomendasi menu olahan sorgum.',
     segmentLabel(seg),
-    `Kategori WAJIB: ${CATEGORY_LABEL[category]}. Semua menu harus termasuk kategori ini.`,
+    `Kategori WAJIB: ${CATEGORY_LABEL[category]}. Menu harus termasuk kategori ini.`,
     'WAJIB pertimbangkan kelompok umur DAN kondisi khusus secara bersamaan.',
     excludedNames.length
-      ? `JANGAN ulangi menu berikut: ${excludedNames.map((name) => `"${name}"`).join(', ')}.`
+      ? `JANGAN pakai menu berikut: ${excludedNames.map((name) => `"${name}"`).join(', ')}.`
       : '',
-    'Ketiga nama menu harus berbeda satu sama lain.',
     'description: maksimal 2 kalimat pendek (sekitar 25 kata), tanpa tanda kurung dan tanpa angka persen.',
     'strengths dan weaknesses: maksimal 8 kata per butir.',
     'nutrition cukup {"calories": number, "protein": number, "fiber": number} — jangan tambah field lain.',
     'Setiap kunci JSON WAJIB diapit tanda kutip ganda. Jangan menulis analisis harga, alergen, catatan verifikasi, atau skor kelayakan.',
     '',
-    'Jawab HANYA JSON array (tanpa teks lain, tanpa markdown fence, tanpa penjelasan sesudah JSON):',
-    '[{"name": string, "description": string, "nutrition": {"calories": number, "protein": number, "fiber": number}, "strengths": [string], "weaknesses": [string], "category": "main_course|soup|dessert|snack|beverage|other"}]',
+    'Jawab HANYA satu objek JSON (tanpa teks lain, tanpa markdown fence, tanpa penjelasan sesudah JSON):',
+    '{"name": string, "description": string, "nutrition": {"calories": number, "protein": number, "fiber": number}, "strengths": [string], "weaknesses": [string], "category": "main_course|soup|dessert|snack|beverage|other"}',
     'JANGAN menyalin atau merangkum isi dokumen basis pengetahuan, dan JANGAN menulis judul seperti "Konsep Produk" atau "Catatan Verifikasi". Jangan menyebut harga.',
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /**
@@ -246,9 +247,12 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
       const serverFailure = serverFailureText(raw);
       if (serverFailure) throw new ServerSideError(serverFailure);
       if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) continue;
-      const parsed = extractJsonArray<MenuItem>(raw);
-      if (!parsed) continue;
-      for (const menu of normMenu(parsed)) {
+      // Satu menu per permintaan. Toleran kalau model tetap membungkusnya dalam
+      // array (satu elemen) — kedua bentuk diterima, isinya tetap satu menu.
+      const asArray = extractJsonArray<MenuItem>(raw);
+      const single = asArray ?? (extractJson<MenuItem>(raw) ? [extractJson<MenuItem>(raw)!] : null);
+      if (!single) continue;
+      for (const menu of normMenu(single)) {
         const key = menuKey(menu.name);
         if (!excluded.has(key) && !collected.has(key)) {
           collected.set(key, { ...menu, category: req.category });

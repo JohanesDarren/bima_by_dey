@@ -181,7 +181,7 @@ export class ServerSideError extends KroomboxError {
 }
 
 const SERVER_FAILURE =
-  /(Server AI gagal merespons|model AI dari provider[^.]*(kendala|timeout)|Error code:\s*5\d\d|fetch failed|ETIMEDOUT|\b50[234]\b|timed out)/i;
+  /(Server AI gagal merespons|model AI dari provider[^.]*(kendala|timeout)|No active credentials|modelnotfound|Error code:\s*(?:4\d\d|5\d\d)|fetch failed|ETIMEDOUT|\b50[234]\b|timed out)/i;
 
 /**
  * Mesin JS/HTTP kadang memberi pesan teknis berbahasa Inggris ("fetch failed",
