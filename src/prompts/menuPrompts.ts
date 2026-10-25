@@ -27,12 +27,20 @@ import type { FoodCategory, Segment } from '../types';
 export const RECIPE_MAX_TOKENS: number | undefined = undefined;
 export const MENU_MAX_TOKENS: number | undefined = undefined;
 
+/**
+ * Arti tiap kategori, bukan sekadar namanya. Terukur 2026-10-25 (di website, prompt
+ * yang sama): kategori minuman dengan ayam di bahan keluar sebagai "Velvet Soup" —
+ * label "beverage (minuman)" saja membuat model bebas memilih bentuk hidangan.
+ */
 const CATEGORY_LABEL: Record<FoodCategory, string> = {
-  main_course: 'main course (makanan utama)',
-  soup: 'soup (berkuah)',
-  dessert: 'dessert (hidangan penutup)',
-  snack: 'snack (kudapan)',
-  beverage: 'beverage (minuman)',
+  main_course:
+    'main course (makanan utama) — hidangan utama yang mengenyangkan (nasi, bubur, mi, lauk). BUKAN minuman, kue, atau camilan.',
+  soup: 'soup (berkuah) — hidangan berkuah (sup, soto, sayur bening). BUKAN minuman, gorengan, atau kue.',
+  dessert:
+    'dessert (hidangan penutup) — manis (puding, kue, es, bubur manis). BUKAN masakan gurih seperti sup ayam atau tumis.',
+  snack: 'snack (kudapan) — camilan ringan porsi kecil (kue, keripik, bola-bola, biskuit). BUKAN hidangan utama atau minuman.',
+  beverage:
+    'beverage (minuman) — WAJIB minuman yang diminum (smoothie, jus, susu/sari sorgum, wedang). BUKAN sup, bubur, atau makanan berkuah.',
   other: 'lainnya',
 };
 
@@ -84,7 +92,7 @@ export function buildMenuPrompt(
   return [
     'Buat 1 rekomendasi menu olahan sorgum.',
     segmentLabel(seg),
-    `Kategori WAJIB: ${CATEGORY_LABEL[category]}. Menu harus termasuk kategori ini.`,
+    `Kategori WAJIB: ${CATEGORY_LABEL[category]} Menu harus termasuk kategori ini; bahan yang tidak cocok untuk kategori itu (mis. ayam untuk minuman) jangan dipakai.`,
     'WAJIB pertimbangkan kelompok umur DAN kondisi khusus secara bersamaan.',
     excludedNames.length
       ? `JANGAN memakai menu berikut: ${excludedNames.map((name) => `"${name}"`).join(', ')}. Menu baru WAJIB beda — ganti bahan utama atau jenis sajiannya, jangan hanya ubah nama.`

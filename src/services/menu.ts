@@ -3,6 +3,7 @@ import { ServerSideError } from './ai/failures';
 import { UserFacingError } from './errors';
 import { isFatalFailure } from './ai/retryPolicy';
 import { readMenuReply, readRecipeReply } from './menuReply';
+import { fitsCategory } from './menuNormalizer';
 import { getCachedMenus, getCachedRecipe, setCachedMenus, setCachedRecipe } from './cache';
 import type { MenuItem, Recipe, RecipeRequest, Segment } from '../types';
 import { isConditionAllowed, NO_NEW_MENU_MESSAGE } from '../constants';
@@ -97,14 +98,16 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
   const excluded = new Set((req.excludedNames ?? []).map(menuKey));
   const collected = new Map<string, MenuItem>();
   const errors: unknown[] = [];
+  const rejected: string[] = [];
 
   // Hasil segar yang pernah tersimpan (hanya untuk permintaan TANPA pengecualian;
   // kalau pengguna minta "menu lainnya", simpanan lama justru berisi menu yang sama).
   if (excluded.size === 0) {
     const cached = getCachedMenus(segment, category);
-    if (cached) {
-      return cached.filter((menu) => !excluded.has(menuKey(menu.name))).slice(0, target);
-    }
+    // Simpanan dari versi lama bisa berisi menu salah kategori (label kategori dulu
+    // ditimpa); kalau tak ada yang lolos, minta ulang ke server.
+    const fit = cached?.filter((menu) => fitsCategory(menu, category));
+    if (fit && fit.length > 0) return fit.slice(0, target);
   }
 
   const mintaSatu = async (): Promise<void> => {
@@ -113,6 +116,7 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
         message: buildMenuPrompt(segment, category, [
           ...excluded,
           ...[...collected.values()].map((menu) => menu.name),
+          ...rejected,
         ]),
         maxTokens: MENU_MAX_TOKENS,
       });
@@ -120,6 +124,12 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
       for (const menu of readMenuReply(raw)) {
         const key = menuKey(menu.name);
         if (excluded.has(key) || collected.has(key)) continue;
+        // Salah kategori (mis. sup untuk "Minuman") → buang; percobaan berikutnya
+        // melarang nama itu sehingga model terdorong ke bentuk hidangan lain.
+        if (!fitsCategory(menu, category)) {
+          rejected.push(menu.name);
+          continue;
+        }
         collected.set(key, { ...menu, category });
         return; // satu permintaan = satu menu
       }

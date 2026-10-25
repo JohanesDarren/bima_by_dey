@@ -59,6 +59,39 @@ function normalizeMenuItem(item: Partial<MenuItem>): MenuItem {
   };
 }
 
+/** Kata pada nama menu yang menempatkannya di luar kategori yang diminta. */
+const DRINK_WORDS = 'smoothie|jus|juice|wedang|latte|milkshake|minuman';
+const SAVORY_MAIN_WORDS = 'nasi|gulai|kari|curry|semur|rendang|soto|sup|soup|sop|tumis|bakso|pepes';
+const CAKE_SNACK_WORDS = 'puding|pudding|kue|cookies|biskuit|brownies|keripik';
+const wordsRe = (words: string) => new RegExp(`\\b(${words})\\b`, 'i');
+const NAME_MISMATCH: Partial<Record<FoodCategory, RegExp>> = {
+  main_course: wordsRe(`${DRINK_WORDS}|${CAKE_SNACK_WORDS}`),
+  soup: wordsRe(`${DRINK_WORDS}|${CAKE_SNACK_WORDS}|goreng|panggang|bakar`),
+  dessert: wordsRe(`${SAVORY_MAIN_WORDS}|ayam|daging|ikan`),
+  snack: wordsRe(`${DRINK_WORDS}|${SAVORY_MAIN_WORDS}`),
+  beverage: wordsRe(`${SAVORY_MAIN_WORDS}|bubur|porridge|goreng|mie|mi|kue|bolu|cake|cookies`),
+};
+/** Kategori jawaban model yang masih wajar untuk kategori yang diminta. */
+const COMPATIBLE: Partial<Record<FoodCategory, FoodCategory[]>> = {
+  main_course: ['main_course', 'soup'],
+  soup: ['soup', 'main_course'],
+  dessert: ['dessert', 'snack', 'beverage'],
+  snack: ['snack', 'dessert'],
+  beverage: ['beverage'],
+};
+
+/**
+ * Apakah menu memang termasuk kategori yang diminta. Kategori pilihan pengguna dulu
+ * langsung ditempel ke kartu, jadi sup dari model tampil berlabel "Minuman".
+ * Dua tanda: kategori yang dilaporkan model sendiri ('other' dianggap tidak tahu),
+ * dan kata pada nama menu.
+ */
+export function fitsCategory(menu: MenuItem, requested: FoodCategory): boolean {
+  const allowed = COMPATIBLE[requested];
+  if (allowed && menu.category !== 'other' && !allowed.includes(menu.category)) return false;
+  return !NAME_MISMATCH[requested]?.test(menu.name);
+}
+
 /** Bersihkan daftar menu mentah; buang yang tidak punya nama sama sekali. */
 export function normalizeMenuList(items: Partial<MenuItem>[]): MenuItem[] {
   return items.map(normalizeMenuItem).filter((m) => m.name !== '(tanpa nama)');

@@ -37,7 +37,7 @@ const { buildRecipePrompt, buildMenuPrompt, RECIPE_MAX_TOKENS, MENU_MAX_TOKENS }
 const { buildChefMessage, buildChefHistory, HISTORY_LIMIT } = require(
   path.join(OUT, 'src', 'prompts', 'chefPrompt.js'),
 );
-const { normalizeMenuList } = require(path.join(OUT, 'src', 'services', 'menuNormalizer.js'));
+const { normalizeMenuList, fitsCategory } = require(path.join(OUT, 'src', 'services', 'menuNormalizer.js'));
 const { isFatalFailure } = require(path.join(OUT, 'src', 'services', 'ai', 'retryPolicy.js'));
 const { ServerSideError, KroomboxTimeoutError } = require(
   path.join(OUT, 'src', 'services', 'ai', 'failures.js'),
@@ -111,6 +111,26 @@ test('normalizeMenuList: kategori bebas dipetakan ke enum yang aman', () => {
   assert.equal(normOne({ name: 'A', category: 'makanan utama' }).category, 'main_course');
   assert.equal(normOne({ name: 'A', category: 'entah apa' }).category, 'other');
   assert.equal(normOne({ name: 'A' }).category, 'other');
+});
+
+test('fitsCategory: menu salah kategori ditolak, yang sesuai lolos', () => {
+  const menu = (name, category = 'other') => ({ name, category });
+  // Kasus nyata 2026-10-25: minuman yang keluar sebagai sup.
+  assert.equal(fitsCategory(menu('SorgumCare Golden Velvet Soup'), 'beverage'), false);
+  assert.equal(fitsCategory(menu('Smoothie Sorgum Pisang'), 'beverage'), true);
+  assert.equal(fitsCategory(menu('Susu Sorgum Pandan', 'soup'), 'beverage'), false);
+  assert.equal(fitsCategory(menu('Smoothie Sorgum Pisang'), 'main_course'), false);
+  assert.equal(fitsCategory(menu('Bubur Sorgum Ayam', 'soup'), 'main_course'), true);
+  assert.equal(fitsCategory(menu('Sup Ayam Sorgum'), 'dessert'), false);
+  assert.equal(fitsCategory(menu('Puding Sorgum Santan', 'dessert'), 'dessert'), true);
+  assert.equal(fitsCategory(menu('Tahu Goreng Sorgum'), 'soup'), false);
+  assert.equal(fitsCategory(menu('Soto Ayam Sorgum', 'soup'), 'soup'), true);
+});
+
+test('buildMenuPrompt: kategori dikirim beserta artinya', () => {
+  const p = buildMenuPrompt(SEG, 'beverage', []);
+  assert.match(p, /WAJIB minuman yang diminum/);
+  assert.match(p, /BUKAN sup/);
 });
 
 test('normalizeMenuList: gizi dipangkas satu kalimat per kunci, bukan objek → kosong', () => {
