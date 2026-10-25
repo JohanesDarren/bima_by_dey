@@ -1,7 +1,7 @@
 @echo off
 rem Build APK BIMA by Dey.
 rem Cek dependency dulu; npm install hanya jalan kalau node_modules belum ada
-rem atau package.json / package-lock.json berubah sejak install terakhir.
+rem atau package.json berubah sejak install terakhir.
 rem Argumen diteruskan ke compile: build.bat --fast  atau  build.bat --clean
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
@@ -30,20 +30,16 @@ if not exist "%SDK%\platform-tools" goto :no_sdk
 echo       %SDK%
 
 echo [4/4] Paket npm
-rem Sidik package.json + package-lock.json disimpan di node_modules\.bima-deps
+rem Sidik package.json disimpan di node_modules\.bima-deps
 rem setelah install; kalau sama, install dilewati.
-set "DEPS_CHECK=const f=require('fs'),h=require('crypto').createHash('sha1');for(const p of ['package.json','package-lock.json'])h.update(f.readFileSync(p));const d=h.digest('hex'),s='node_modules/.bima-deps';if(process.argv[1]==='save')f.writeFileSync(s,d);else process.exit(f.existsSync(s)&&f.readFileSync(s,'utf8')===d?0:1)"
+set "DEPS_CHECK=const f=require('fs'),h=require('crypto').createHash('sha1');h.update(f.readFileSync('package.json'));const d=h.digest('hex'),s='node_modules/.bima-deps';if(process.argv[1]==='save')f.writeFileSync(s,d);else process.exit(f.existsSync(s)&&f.readFileSync(s,'utf8')===d?0:1)"
 node -e "%DEPS_CHECK%" check
 if not errorlevel 1 (
   echo       Semua sudah terpasang, lewati install.
 ) else (
-  echo       Dependency baru/berubah, menjalankan npm ci ...
-  call npm ci
-  if errorlevel 1 (
-    echo       npm ci gagal ^(lock tidak sinkron dengan package.json^), pakai npm install ...
-    call npm install
-    if errorlevel 1 goto :fail
-  )
+  echo       Dependency baru/berubah, menjalankan npm install ...
+  call npm install
+  if errorlevel 1 goto :fail
   node -e "%DEPS_CHECK%" save
 )
 

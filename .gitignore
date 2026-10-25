@@ -55,3 +55,4 @@ yarn-error.*
 
 # semua hasil build (APK, log, kompilasi uji) — lihat compile/build-apk.mjs
 /compile/out/
+package-lock.json
