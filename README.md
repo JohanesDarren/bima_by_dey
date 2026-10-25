@@ -25,7 +25,7 @@ prepare healthy sorghum meals for specific demographics. Built per the BIMA PRD
 
 ```bash
 npm install
-cp .env.example .env        # fill in the Kroombox URL
+# create .env with the variables listed below
 npm start                   # then press 'a' for Android / 'i' for iOS
 ```
 
@@ -33,7 +33,13 @@ npm start                   # then press 'a' for Android / 'i' for iOS
 
 | Variable | Purpose |
 |----------|---------|
-| `EXPO_PUBLIC_KROOMBOX_URL` | Public HTTPS base URL of the RAG FastAPI |
+| `EXPO_PUBLIC_KROOMBOX_URL` | Base URL of the RAG API, **without** `/v1` (the app appends `/api/chat`) |
+| `EXPO_PUBLIC_KROOMBOX_API_KEY` | Consumer key (`bima_live_…`) from the dashboard's API Consumers page |
+| `EXPO_PUBLIC_9ROUTER_BASE_URL` | Speech-to-text base URL (`POST {base}/audio/transcriptions`) for the chat mic |
+| `EXPO_PUBLIC_9ROUTER_API_KEY` | Key for the speech-to-text endpoint |
+| `EXPO_PUBLIC_9ROUTER_STT_MODEL` | Optional STT model, default `groq/whisper-large-v3` |
+
+`EXPO_PUBLIC_*` values are baked into the JS bundle at build time — rebuild after editing `.env`.
 
 ## Data
 
@@ -50,5 +56,7 @@ via `react-native-mmkv` (with a `localStorage` fallback on web).
 
 - `npm run android` / `npm run ios` / `npm run web` — start dev servers
 - `npx expo export --platform android` — produce a production JS bundle
-- `npx tsc --noEmit` — type check
-- `npx expo-doctor` — validate project health
+- `npm run typecheck` — type check
+- `npm test` — unit tests (`node --test`, no extra runner)
+- `npm run lint` — ESLint + Prettier (config in `package.json`: `eslintConfig`, `prettier`)
+- `npm run doctor` — validate project health
