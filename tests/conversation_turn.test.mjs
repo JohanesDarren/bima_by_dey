@@ -11,13 +11,11 @@
  * sebagai CommonJS lewat tests/compileForTest.mjs — tanpa test runner pihak ketiga.
  */
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileForTest } from './compileForTest.mjs';
+import { compileForTest, testBuildDir } from './compileForTest.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const OUT = path.join(HERE, '.compiled-cjs');
+const OUT = testBuildDir('turn');
 
 const require = compileForTest({
   sources: [
@@ -165,16 +163,22 @@ test('giliran: startStream melempar sinkron → hasil error, bukan promise yang 
 // ---------------------------------------------------------------------------
 
 test('giliran: kegagalan sisi server → status failure dengan kalimat jujur (bukan balon jawaban)', async () => {
-  const { start, state } = fakeStream();
+  // Giliran mencoba ulang saat server melapor gagal (lihat conversation_retry), jadi
+  // stream ini mengirim pesan kegagalan yang sama di SETIAP percobaan.
+  const start = (_request, handlers) => {
+    setTimeout(() => {
+      // Persis seperti yang terukur dari server: pesan kegagalan datang sebagai delta.
+      handlers.onToken('Server AI gagal merespons: Error code: 503');
+      handlers.onDone();
+    }, 0);
+    return { close: () => {} };
+  };
   const partials = [];
   const { result } = runConversationTurn(
     { prompt: 'prompt', question: 'apa?', maxWords: 30 },
     start,
     { onPartial: (t) => partials.push(t) },
   );
-  // Persis seperti yang terukur dari server: pesan kegagalan datang sebagai delta.
-  state.handlers.onToken('Server AI gagal merespons: Error code: 503');
-  state.handlers.onDone();
 
   const out = await result;
   assert.equal(out.status, 'failure');

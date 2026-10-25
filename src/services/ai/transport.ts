@@ -293,8 +293,10 @@ function collectKroomboxStream(req: StreamRequest): Promise<string> {
             if (settled) return;
             armIdle();
             // Data yang kita butuhkan sudah lengkap → tutup sekarang, jangan tunggu
-            // server selesai menulis prosa tambahan.
-            const ready = completeJsonSlice(text);
+            // server selesai menulis prosa tambahan. JSON hanya bisa menjadi utuh pada
+            // token yang membawa kurung tutup, jadi token lain tidak perlu memindai
+            // ulang seluruh teks (dulu dipindai tiap token: makin panjang makin lambat).
+            const ready = /[}\]]/.test(token) ? completeJsonSlice(text) : null;
             if (ready) {
               // Data lengkap = server sehat; pastikan pemutus ikut kembali normal.
               chatBreaker.onSuccess();

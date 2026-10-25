@@ -9,11 +9,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { compileForTest } from './compileForTest.mjs';
+import { compileForTest, testBuildDir } from './compileForTest.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const OUT = path.join(HERE, '.compiled-retry');
+const OUT = testBuildDir('retry');
 
 const require = compileForTest({
   sources: [

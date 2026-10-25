@@ -7,13 +7,11 @@
  * tests/compileForTest.mjs (tanpa test runner pihak ketiga).
  */
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileForTest } from './compileForTest.mjs';
+import { compileForTest, testBuildDir } from './compileForTest.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const OUT = path.join(HERE, '.compiled-errors');
+const OUT = testBuildDir('errors');
 
 const require = compileForTest({
   sources: [

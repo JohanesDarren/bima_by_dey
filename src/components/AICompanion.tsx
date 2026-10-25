@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import {
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,18 +13,10 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import { CHAT_LOADING_STAGES } from '../utils/assistantText';
 import { useChatController } from '../hooks/useChatController';
-import {
-  requestRecordingPermissionsAsync,
-  useAudioRecorder,
-  RecordingPresets,
-  setAudioModeAsync,
-} from 'expo-audio';
-import {
-  isTranscriptionConfigured,
-  transcribeAudio,
-  TranscriptionError,
-  TRANSCRIPTION_MESSAGES,
-} from '../services/speechToText';
+import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
+import { useRotatingStage } from '../hooks/useRotatingStage';
+import { useVoiceInput } from '../hooks/useVoiceInput';
+import { ChatMessageList } from './ChatMessageList';
 
 interface Props {
   context: string;
@@ -40,11 +31,21 @@ interface Props {
 
 const SUGGESTIONS = ['Pengganti bahan?', 'Ubah jumlah porsi?', 'Jelaskan langkah ini'];
 
+/** "Bubur Sorgum Manis" → "BS". */
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase();
+}
+
 /**
  * Panel chat — MURNI tampilan. Percakapan, TTS, dan riwayat hidup di controller
- * (`services/chatController`, dipasang lewat `useChatController`); komponen ini hanya
- * merender state-nya dan mengurus hal yang khas layar: keyboard, guliran, dan teks
- * tahapan menunggu.
+ * (`services/chatController`, dipasang lewat `useChatController`); rekaman suara di
+ * `useVoiceInput`; daftar balon di `ChatMessageList`. Komponen ini hanya merangkai
+ * semuanya dan mengurus tata letak saat keyboard terbuka.
  */
 export function AICompanion({
   context,
@@ -61,93 +62,27 @@ export function AICompanion({
     simple,
     onAssistantMessage,
   });
-  const scrollRef = useRef<ScrollView>(null);
-  /** Keyboard terbuka → panel chat yang mengisi seluruh ruang sisa layar. */
-  const [keyboardUp, setKeyboardUp] = useState(false);
-  /** Tahapan menunggu jawaban (teks bergantian) — lihat CHAT_LOADING_STAGES. */
-  const [loadingStage, setLoadingStage] = useState(0);
-  /** Rekaman suara → teks (9router). Bukan fitur RAG; hanya cara mengisi kotak pesan. */
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const [transcribing, setTranscribing] = useState(false);
-  const [micError, setMicError] = useState<string | null>(null);
-
   /**
-   * Satu tombol: ketuk untuk mulai merekam, ketuk lagi untuk berhenti lalu kirim.
-   * Transkrip masuk ke kotak pesan dan langsung dikirim lewat jalur chat yang sama,
-   * sehingga aturan jawaban (RAG, panjang, anti-halusinasi) tetap satu.
-   */
-  const toggleRecording = async () => {
-    if (transcribing) return;
-    setMicError(null);
-
-    if (recorder.isRecording) {
-      setTranscribing(true);
-      try {
-        await recorder.stop();
-        const uri = recorder.uri;
-        if (!uri) throw new TranscriptionError(TRANSCRIPTION_MESSAGES.emptyAudio);
-        const text = await transcribeAudio({ uri, language: 'id' });
-        chat.setInput(text);
-        chat.send(text);
-      } catch (error) {
-        setMicError(
-          error instanceof TranscriptionError ? error.message : TRANSCRIPTION_MESSAGES.failed,
-        );
-      } finally {
-        setTranscribing(false);
-      }
-      return;
-    }
-
-    if (!isTranscriptionConfigured()) {
-      setMicError(TRANSCRIPTION_MESSAGES.missingConfig);
-      return;
-    }
-
-    try {
-      // Izin mikrofon diminta saat tombol ditekan, bukan saat panel dibuat — supaya
-      // pengguna melihat konteksnya. Tanpa ini recorder.prepareToRecordAsync() gagal
-      // senyap di perangkat yang belum pernah memberi izin.
-      const permission = await requestRecordingPermissionsAsync();
-      if (!permission.granted) {
-        setMicError('Izin mikrofon ditolak. Aktifkan izin mikrofon di pengaturan HP.');
-        return;
-      }
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-    } catch {
-      setMicError(TRANSCRIPTION_MESSAGES.failed);
-    }
-  };
-
-  useEffect(() => {
-    if (!streaming) {
-      setLoadingStage(0);
-      return;
-    }
-    const timer = setInterval(() => setLoadingStage((value) => value + 1), 2500);
-    return () => clearInterval(timer);
-  }, [streaming]);
-
-  /**
+   * Keyboard terbuka → panel chat yang mengisi seluruh ruang sisa layar.
+   *
    * Kenapa begini, bukan sekadar "gulir ke bawah saat keyboard muncul": panel ini
    * berada di dalam guliran layar, dan jendela Android berubah ukuran SETELAH
    * perintah gulir berjalan — jadi posisinya meleset dan kolom tulis tetap
    * tertutup. Di sini tidak ada tebakan waktu: saat keyboard muncul, panel dipaksa
    * mengisi ruang sisa (flex), sehingga kolom tulis selalu tepat di atas keyboard.
    */
-  useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => {
-      setKeyboardUp(true);
-      scrollRef.current?.scrollToEnd({ animated: true });
-    });
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardUp(false));
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
+  const keyboardUp = useKeyboardVisible();
+  /** Tahapan menunggu jawaban (teks bergantian) — lihat CHAT_LOADING_STAGES. */
+  const loadingLabel = useRotatingStage(streaming, CHAT_LOADING_STAGES);
+  /**
+   * Satu tombol: ketuk untuk mulai merekam, ketuk lagi untuk berhenti lalu kirim.
+   * Transkrip masuk ke kotak pesan dan langsung dikirim lewat jalur chat yang sama,
+   * sehingga aturan jawaban (RAG, panjang, anti-halusinasi) tetap satu.
+   */
+  const voice = useVoiceInput((text) => {
+    chat.setInput(text);
+    chat.send(text);
+  });
 
   return (
     <KeyboardAvoidingView
@@ -164,14 +99,7 @@ export function AICompanion({
       >
         <View style={[styles.recipeCard, simple && styles.hidden]}>
           <View style={styles.recipeInitials}>
-            <Text style={styles.recipeInitialsText}>
-              {recipeName
-                .split(/\s+/)
-                .slice(0, 2)
-                .map((word) => word[0])
-                .join('')
-                .toUpperCase()}
-            </Text>
+            <Text style={styles.recipeInitialsText}>{initials(recipeName)}</Text>
           </View>
           <View style={styles.recipeCopy}>
             <Text style={styles.recipeBadge}>RESEP AKTIF</Text>
@@ -239,52 +167,11 @@ export function AICompanion({
           </Pressable>
         </View>
 
-        <ScrollView
-          ref={scrollRef}
+        <ChatMessageList
+          messages={messages}
+          loadingLabel={streaming ? loadingLabel : null}
           style={[styles.messages, keyboardUp && styles.messagesKeyboard]}
-          contentContainerStyle={styles.messagesContent}
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-        >
-          {messages.length === 0 ? (
-            <View style={styles.tip}>
-              <Text style={styles.tipText}>
-                Tanyakan takaran, pengganti bahan, atau langkah yang belum jelas pada resep ini.
-              </Text>
-            </View>
-          ) : (
-            messages.map((message, index) => (
-              <View
-                key={`${message.role}-${index}`}
-                style={[styles.messageRow, message.role === 'user' && styles.messageRowUser]}
-              >
-                {message.role === 'assistant' ? (
-                  <View style={styles.avatarSmall}>
-                    <MaterialIcons name="grain" size={13} color={colors.primary} />
-                  </View>
-                ) : null}
-                <View
-                  style={[
-                    styles.bubble,
-                    message.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant,
-                  ]}
-                >
-                  <Text
-                    style={[styles.bubbleText, message.role === 'user' && styles.bubbleTextUser]}
-                  >
-                    {message.content || '…'}
-                  </Text>
-                </View>
-              </View>
-            ))
-          )}
-          {streaming ? (
-            <Text style={styles.streamLabel} accessibilityLiveRegion="polite">
-              {CHAT_LOADING_STAGES[loadingStage % CHAT_LOADING_STAGES.length]}
-            </Text>
-          ) : null}
-        </ScrollView>
+        />
 
         <ScrollView
           horizontal
@@ -342,29 +229,27 @@ export function AICompanion({
             )}
           </Pressable>
           <Pressable
-            accessibilityLabel={
-              recorder.isRecording ? 'Berhenti merekam dan kirim' : 'Rekam pertanyaan'
-            }
-            accessibilityState={{ busy: transcribing, selected: recorder.isRecording }}
-            onPress={toggleRecording}
-            disabled={streaming || transcribing}
+            accessibilityLabel={voice.recording ? 'Berhenti merekam dan kirim' : 'Rekam pertanyaan'}
+            accessibilityState={{ busy: voice.transcribing, selected: voice.recording }}
+            onPress={voice.toggle}
+            disabled={streaming || voice.transcribing}
             style={({ pressed }) => [
               styles.micButton,
-              recorder.isRecording && styles.micButtonActive,
-              (streaming || transcribing) && styles.sendDisabled,
+              voice.recording && styles.micButtonActive,
+              (streaming || voice.transcribing) && styles.sendDisabled,
               pressed && styles.pressed,
             ]}
           >
             <MaterialIcons
-              name={recorder.isRecording ? 'stop' : transcribing ? 'hourglass-top' : 'mic'}
+              name={voice.recording ? 'stop' : voice.transcribing ? 'hourglass-top' : 'mic'}
               size={19}
-              color={recorder.isRecording ? colors.surface : colors.primaryDark}
+              color={voice.recording ? colors.surface : colors.primaryDark}
             />
           </Pressable>
         </View>
-        {micError ? (
+        {voice.error ? (
           <Text style={styles.micError} accessibilityLiveRegion="polite">
-            {micError}
+            {voice.error}
           </Text>
         ) : null}
       </View>
@@ -477,35 +362,6 @@ const styles = StyleSheet.create({
   /** Keyboard terbuka: panel & daftar pesan mengisi ruang sisa, bukan tinggi tetap. */
   fill: { flex: 1 },
   messagesKeyboard: { flex: 1, minHeight: 96, maxHeight: 9999 },
-  messagesContent: { padding: spacing.md },
-  tip: {
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent,
-    paddingLeft: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  tipText: { ...typography.bodySm, color: colors.textMuted, marginTop: 3 },
-  messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: spacing.sm },
-  messageRowUser: { justifyContent: 'flex-end' },
-  avatarSmall: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bubble: {
-    maxWidth: '82%',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    borderRadius: radius.lg,
-  },
-  bubbleAssistant: { backgroundColor: colors.surfaceAlt, borderBottomLeftRadius: 4 },
-  bubbleUser: { backgroundColor: colors.primary, borderBottomRightRadius: 4 },
-  bubbleText: { ...typography.bodySm, color: colors.text },
-  bubbleTextUser: { color: colors.textOnPrimary },
-  streamLabel: { ...typography.caption, color: colors.textMuted, marginLeft: 32 },
   suggestions: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
   suggestion: {
     minHeight: 38,

@@ -25,7 +25,7 @@ if (runtime.ErrorUtils) {
 
 let App: React.ComponentType;
 try {
-  App = (require('./App') as { default: React.ComponentType }).default;
+  App = (require('./src/App') as { default: React.ComponentType }).default;
 } catch (error: unknown) {
   console.error('[index.ts] Failed to import App:', error);
   const { Text, View } = require('react-native') as typeof import('react-native');

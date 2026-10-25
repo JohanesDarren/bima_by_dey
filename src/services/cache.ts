@@ -1,4 +1,4 @@
-import { getString, setString } from '../lib/storage';
+import { deleteKey, getAllKeys, getString, setString } from '../lib/storage';
 import { menuKey } from '../utils/menuKey';
 import type { FoodCategory, MenuItem, Recipe, Segment } from '../types';
 
@@ -30,9 +30,8 @@ function segmentKey(seg: Segment): string {
   return `${age}_${cond}`;
 }
 
-function read<T>(key: string): T | null {
-  const raw = getString(key);
-  if (!raw) return null;
+/** Isi simpanan yang masih segar, atau `null` bila kosong / basi / rusak. */
+function readFresh<T>(raw: string): T | null {
   try {
     const env = JSON.parse(raw) as Envelope<T>;
     if (!env || typeof env.savedAt !== 'number') return null;
@@ -40,6 +39,31 @@ function read<T>(key: string): T | null {
     return env.value ?? null;
   } catch {
     return null; // data rusak/versi lama → anggap tidak ada
+  }
+}
+
+function read<T>(key: string): T | null {
+  const raw = getString(key);
+  if (!raw) return null;
+  const value = readFresh<T>(raw);
+  // Basi/rusak → buang sekarang supaya tidak menghabiskan penyimpanan HP.
+  if (value === null) deleteKey(key);
+  return value;
+}
+
+/**
+ * Buang semua simpanan yang sudah basi/rusak. Dipanggil sekali saat aplikasi dibuka:
+ * tanpa ini, resep & menu yang tidak pernah dibuka lagi menumpuk selamanya di MMKV.
+ */
+export function pruneExpiredCache(): void {
+  try {
+    for (const key of getAllKeys()) {
+      if (!key.startsWith(`${PREFIX}:`)) continue;
+      const raw = getString(key);
+      if (!raw || readFresh(raw) === null) deleteKey(key);
+    }
+  } catch {
+    // Penyimpanan tidak tersedia: abaikan, simpanan hanya pengoptimal.
   }
 }
 

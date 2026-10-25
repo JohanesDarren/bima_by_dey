@@ -18,6 +18,12 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO = path.resolve(HERE, '..');
+const TSC = createRequire(import.meta.url).resolve('typescript/bin/tsc');
+
+/** Folder hasil kompilasi uji `name` — semua hasil build hidup di compile/out/. */
+export function testBuildDir(name) {
+  return path.join(REPO, 'compile', 'out', 'tests', name);
+}
 
 /**
  * Kompilasi daftar sumber (path relatif terhadap repo) ke `outDir` bila salah satu
@@ -33,10 +39,12 @@ export function compileForTest({ sources, outDir }) {
   if (!fresh) {
     fs.rmSync(outDir, { recursive: true, force: true });
     fs.mkdirSync(outDir, { recursive: true });
+    // Panggil tsc lewat node langsung (bukan `npx`): `npx` tidak bisa di-spawn tanpa
+    // shell di Windows.
     execFileSync(
-      'npx',
+      process.execPath,
       [
-        'tsc',
+        TSC,
         ...absSources,
         '--ignoreConfig',
         '--rootDir',

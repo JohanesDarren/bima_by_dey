@@ -17,6 +17,7 @@ interface StorageBackend {
   getString(key: string): string | undefined;
   set(key: string, value: string | boolean): void;
   delete(key: string): void;
+  getAllKeys(): string[];
   clearAll(): void;
 }
 
@@ -47,6 +48,13 @@ function createWebBackend(): StorageBackend {
         mem.delete(key);
       }
     },
+    getAllKeys() {
+      try {
+        return Object.keys(localStorage);
+      } catch {
+        return [...mem.keys()];
+      }
+    },
     clearAll() {
       try {
         localStorage.clear();
@@ -68,6 +76,7 @@ function createMemoryBackend(): StorageBackend {
     delete: (key) => {
       mem.delete(key);
     },
+    getAllKeys: () => [...mem.keys()],
     clearAll: () => {
       mem.clear();
     },
@@ -84,6 +93,7 @@ function createNativeBackend(): StorageBackend {
       getString: (key) => storage.getString(key),
       set: (key, value) => storage.set(key, value),
       delete: (key) => storage.delete(key),
+      getAllKeys: () => storage.getAllKeys(),
       clearAll: () => storage.clearAll(),
     };
   } catch (e) {
@@ -118,6 +128,14 @@ export function setBoolean(key: string, value: boolean): void {
 
 export function setString(key: string, value: string): void {
   backend.set(key, value);
+}
+
+export function deleteKey(key: string): void {
+  backend.delete(key);
+}
+
+export function getAllKeys(): string[] {
+  return backend.getAllKeys();
 }
 
 // --- App-specific storage API ---------------------------------------------

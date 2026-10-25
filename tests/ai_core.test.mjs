@@ -2,18 +2,16 @@
  * Uji perilaku untuk module AI yang MURNI (tanpa jaringan): pembacaan JSON dari
  * balasan model (ai/json) dan taksonomi kegagalan (ai/failures).
  *
- * Dijalankan dengan `npm test` (atau `node --test tests/`). Kedua module itu tidak
+ * Dijalankan dengan `npm test`. Kedua module itu tidak
  * mengimpor apa pun, jadi skrip ini mengompilasinya sendiri lewat tests/compileForTest.mjs
- * — tidak butuh test runner pihak ketiga, sama seperti .scratch/perf-latency/breaker_check.js.
+ * — tidak butuh test runner pihak ketiga.
  */
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileForTest } from './compileForTest.mjs';
+import { compileForTest, testBuildDir } from './compileForTest.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const OUT = path.join(HERE, '.compiled');
+const OUT = testBuildDir('ai-core');
 
 const require = compileForTest({
   sources: ['src/services/ai/json.ts', 'src/services/ai/failures.ts'],

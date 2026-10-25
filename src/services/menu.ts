@@ -1,10 +1,8 @@
 import { chatKroombox } from './ai/transport';
-import { extractJson, extractJsonArray } from './ai/json';
 import { ServerSideError } from './ai/failures';
-import { serverFailureText, UserFacingError } from './errors';
+import { UserFacingError } from './errors';
 import { isFatalFailure } from './ai/retryPolicy';
-import { normalizeRecipeResponse } from './recipeNormalizer';
-import { normalizeMenuList } from './menuNormalizer';
+import { readMenuReply, readRecipeReply } from './menuReply';
 import { getCachedMenus, getCachedRecipe, setCachedMenus, setCachedRecipe } from './cache';
 import type { MenuItem, Recipe, RecipeRequest, Segment } from '../types';
 import { isConditionAllowed, NO_NEW_MENU_MESSAGE } from '../constants';
@@ -23,6 +21,7 @@ import {
  *
  * Isi dipecah ke module yang lebih sempit dengan satu tanggung jawab:
  *   - prompts/menuPrompts   → teks prompt (murni).
+ *   - services/menuReply    → membaca balasan server jadi menu/resep (fungsi murni).
  *   - services/menuNormalizer → perapian item menu (fungsi murni).
  *   - services/recipeNormalizer → validasi bentuk resep (fungsi murni).
  *   - services/cache        → simpanan di perangkat.
@@ -64,13 +63,8 @@ export async function getRecipe(menuName: string, seg: Segment): Promise<Recipe>
       message: buildRecipePrompt(menuName, seg),
       maxTokens: RECIPE_MAX_TOKENS,
     });
-    // Model di sisi server tumbang → berhenti dengan pesan jujur.
-    const serverFailure = serverFailureText(r);
-    if (serverFailure) throw new ServerSideError(serverFailure);
-    // Penorma dari upstream: validasi bentuk + paksa nama resep = nama menu yang
-    // diminta (menutup akar masalah "nama resep beda dari nama menu").
-    const parsed = extractJson<unknown>(r);
-    const recipe = normalizeRecipeResponse(parsed, menuName);
+    // Model di sisi server tumbang → readRecipeReply melempar pesan jujur (berhenti).
+    const recipe = readRecipeReply(r, menuName);
     if (recipe) {
       setCachedRecipe(menuName, seg, recipe);
       return recipe;
@@ -122,13 +116,8 @@ export async function searchRecipes(req: RecipeRequest): Promise<MenuItem[]> {
         ]),
         maxTokens: MENU_MAX_TOKENS,
       });
-      // Model di sisi server tumbang → berhenti sekarang, jangan ulang.
-      const serverFailure = serverFailureText(raw);
-      if (serverFailure) throw new ServerSideError(serverFailure);
-      if (!raw.trim() || /tidak ada teks|maaf/i.test(raw.slice(0, 120))) return;
-      const parsed = extractJsonArray<MenuItem>(raw);
-      if (!parsed) return;
-      for (const menu of normalizeMenuList(parsed)) {
+      // Model di sisi server tumbang → readMenuReply melempar; berhenti, jangan ulang.
+      for (const menu of readMenuReply(raw)) {
         const key = menuKey(menu.name);
         if (excluded.has(key) || collected.has(key)) continue;
         collected.set(key, { ...menu, category });

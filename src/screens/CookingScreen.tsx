@@ -1,22 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Keyboard, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Button } from '../components/Button';
 import { AICompanion } from '../components/AICompanion';
+import { StepTimerCard } from '../components/StepTimerCard';
 import { VoiceCallModal } from '../components/VoiceCallModal';
+import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
+import { useStepTimer } from '../hooks/useStepTimer';
 import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
 import { colors, radius, spacing, typography, elevation } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
 import type { RecipeStep } from '../types';
 import { saveCookHistory } from '../services/history';
+import {
+  buildCookingChatContext,
+  buildCookingStepLabel,
+  ingredientList,
+} from '../prompts/cookingContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Cooking'>;
 
-const fmt = (s: number) =>
-  `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+/** Catatan jawaban AI yang disimpan ke riwayat (hanya yang terakhir). */
+const MAX_NOTES = 5;
+const MAX_NOTE_LENGTH = 160;
 
 /**
  * Mode masak: step-by-step terstruktur + timer tiap langkah + AI menemani
@@ -28,72 +37,29 @@ export function CookingScreen({ navigation, route }: Props) {
   const isGuest = useAuthStore((s) => s.isGuest);
 
   const [stepIdx, setStepIdx] = useState(0);
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
-  const [timerRunning, setTimerRunning] = useState(false);
   const [voiceCallVisible, setVoiceCallVisible] = useState(false);
   const [notes, setNotes] = useState<string[]>([]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
-  /** Keyboard terbuka → layar berhenti menggulir, panel chat yang mengisi. */
-  const [keyboardUp, setKeyboardUp] = useState(false);
-
   /**
-   * Saat keyboard muncul: langkah & catatan disembunyikan sementara, guliran
-   * layar dimatikan, dan panel chat diberi seluruh tinggi yang tersisa. Dengan
-   * begitu kolom tulis + tombol kirim selalu berada tepat di atas keyboard —
-   * tidak bergantung pada waktu gulir-otomatis (pendekatan lama: kadang masih
-   * terpotong karena jendela berubah ukuran setelah guliran terjadi).
+   * Keyboard terbuka → langkah & catatan disembunyikan sementara, guliran layar
+   * dimatikan, dan panel chat diberi seluruh tinggi yang tersisa. Dengan begitu
+   * kolom tulis + tombol kirim selalu berada tepat di atas keyboard — tidak
+   * bergantung pada waktu gulir-otomatis (pendekatan lama: kadang masih terpotong
+   * karena jendela berubah ukuran setelah guliran terjadi).
    */
-  useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardUp(true));
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardUp(false));
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
+  const keyboardUp = useKeyboardVisible();
 
   const steps: RecipeStep[] = recipe?.steps ?? [];
   const step = steps[stepIdx];
   const isLast = stepIdx === steps.length - 1;
+  const stepKey = `${recipe?.name ?? ''}#${stepIdx}`;
+  const timer = useStepTimer(step?.durationMinutes, stepKey);
 
-  // Start/reset timer ketika step berubah & step punya durasi.
+  // Langkah berganti → catatan langkah sebelumnya dibuang & layar kembali ke atas.
   useEffect(() => {
-    clearTimer();
-    if (step?.durationMinutes && step.durationMinutes > 0) {
-      setSecondsLeft(step.durationMinutes * 60);
-      setTimerRunning(true);
-    } else {
-      setSecondsLeft(null);
-      setTimerRunning(false);
-    }
     setNotes([]);
     scrollRef.current?.scrollTo({ y: 0, animated: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepIdx, recipe?.name]);
-
-  // Tick timer.
-  useEffect(() => {
-    if (!timerRunning || secondsLeft === null) return;
-    timerRef.current = setInterval(() => {
-      setSecondsLeft((v) => {
-        if (v === null || v <= 1) {
-          setTimerRunning(false);
-          return 0;
-        }
-        return v - 1;
-      });
-    }, 1000);
-    return clearTimer;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timerRunning]);
-
-  function clearTimer() {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }
+  }, [stepKey]);
 
   const goNext = () => {
     if (isLast) {
@@ -106,7 +72,7 @@ export function CookingScreen({ navigation, route }: Props) {
             segment,
             finishedAt: new Date().toISOString(),
             recipe,
-            notes: notes.slice(-5).map((n) => n.slice(0, 160)),
+            notes: notes.map((n) => n.slice(0, MAX_NOTE_LENGTH)),
           });
         } catch {
           // gagal simpan — jangan blokir navigasi
@@ -116,13 +82,6 @@ export function CookingScreen({ navigation, route }: Props) {
       return;
     }
     setStepIdx((i) => i + 1);
-  };
-
-  const resetTimer = () => {
-    if (step?.durationMinutes && step.durationMinutes > 0) {
-      setSecondsLeft(step.durationMinutes * 60);
-      setTimerRunning(true);
-    }
   };
 
   if (!recipe || steps.length === 0) {
@@ -171,57 +130,14 @@ export function CookingScreen({ navigation, route }: Props) {
             </View>
             <Text style={styles.stepInstr}>{step.instruction}</Text>
 
-            {/* Timer */}
-            {secondsLeft !== null ? (
-              <View style={styles.timerBox}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <MaterialIcons
-                    name={
-                      timerRunning
-                        ? 'hourglass-bottom'
-                        : secondsLeft === 0
-                          ? 'check-circle'
-                          : 'pause-circle-outline'
-                    }
-                    size={16}
-                    color={secondsLeft === 0 ? colors.success : colors.textMuted}
-                  />
-                  <Text style={styles.timerLabel}>
-                    {timerRunning
-                      ? 'Waktu berjalan…'
-                      : secondsLeft === 0
-                        ? 'Waktu selesai!'
-                        : 'Waktu dijeda'}
-                  </Text>
-                </View>
-                <Text style={[styles.timerValue, secondsLeft === 0 && styles.timerDone]}>
-                  {fmt(secondsLeft)}
-                </Text>
-                <View style={styles.timerActions}>
-                  {secondsLeft === 0 ? (
-                    <TouchableOpacity style={styles.resetBtn} onPress={resetTimer}>
-                      <MaterialIcons name="refresh" size={14} color={colors.text} />
-                      <Text style={styles.resetBtnText}>Ulangi</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.resetBtn}
-                      onPress={() => setTimerRunning((r) => !r)}
-                    >
-                      <MaterialIcons
-                        name={timerRunning ? 'pause' : 'play-arrow'}
-                        size={14}
-                        color={colors.text}
-                      />
-                      <Text style={styles.resetBtnText}>{timerRunning ? 'Jeda' : 'Lanjut'}</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity style={styles.resetBtn} onPress={resetTimer}>
-                    <MaterialIcons name="restore" size={14} color={colors.text} />
-                    <Text style={styles.resetBtnText}>Reset {step.durationMinutes}m</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+            {timer.secondsLeft !== null ? (
+              <StepTimerCard
+                secondsLeft={timer.secondsLeft}
+                running={timer.running}
+                durationMinutes={step.durationMinutes}
+                onToggle={timer.toggle}
+                onRestart={timer.restart}
+              />
             ) : null}
 
             {/* Aksi */}
@@ -237,17 +153,14 @@ export function CookingScreen({ navigation, route }: Props) {
 
         {/* AI menemani — diskusi saat masak (teks + voice dua arah) */}
         <AICompanion
-          context={
-            step
-              ? `Saya sedang memasak "${recipe?.name}". Bahan resep ini: ${recipe?.ingredients?.length ? recipe.ingredients.join(', ') : 'belum tercatat'}. Langkah ${stepIdx + 1}/${steps.length}: ${step.title}. ${step.instruction}. Bantu & temani saya selama proses masak, jawab pertanyaan saat saya ragu.`
-              : `Saya sedang memasak "${recipe?.name}". Bahan resep ini: ${recipe?.ingredients?.length ? recipe.ingredients.join(', ') : 'belum tercatat'}. Temani & bantu saya.`
-          }
+          context={buildCookingChatContext(recipe, stepIdx)}
           recipeName={recipe.name}
           recipeMeta={`Langkah ${stepIdx + 1} dari ${steps.length}`}
           simple
           onVoiceCall={() => setVoiceCallVisible(true)}
           placeholder={`Tanya soal langkah ${stepIdx + 1} / tanya bahan…`}
-          onAssistantMessage={(t) => setNotes((n) => [...n, t])}
+          // Hanya catatan terakhir yang disimpan ke riwayat — jangan menumpuk di memori.
+          onAssistantMessage={(t) => setNotes((n) => [...n, t].slice(-MAX_NOTES))}
         />
 
         {isGuest && !keyboardUp ? (
@@ -261,14 +174,8 @@ export function CookingScreen({ navigation, route }: Props) {
           onClose={() => setVoiceCallVisible(false)}
           segment={segment}
           recipeName={recipe.name}
-          stepLabel={
-            step
-              ? `Langkah ${stepIdx + 1}/${steps.length}: ${step.title}. ${step.instruction}`
-              : `Langkah ${stepIdx + 1} dari ${steps.length}`
-          }
-          recipeIngredients={
-            recipe?.ingredients?.length ? recipe.ingredients.join(', ') : undefined
-          }
+          stepLabel={buildCookingStepLabel(recipe, stepIdx)}
+          recipeIngredients={ingredientList(recipe) ?? undefined}
         />
       ) : null}
     </SafeAreaView>
@@ -314,26 +221,6 @@ const styles = StyleSheet.create({
   stepNumBigText: { color: colors.textOnPrimary, fontSize: 18, fontWeight: '800' },
   stepTitle: { ...typography.h3, color: colors.text, flex: 1 },
   stepInstr: { ...typography.body, color: colors.text, marginTop: spacing.md, lineHeight: 24 },
-  timerBox: {
-    marginTop: spacing.lg,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    alignItems: 'center',
-  },
-  timerLabel: { color: colors.textMuted, fontSize: 13 },
-  timerValue: { ...typography.h1, fontSize: 44, color: colors.primary, marginVertical: spacing.sm },
-  timerDone: { color: colors.success },
-  timerActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
-  resetBtn: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  resetBtnText: { color: colors.text, fontWeight: '600', fontSize: 13 },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
   nextBtn: { flex: 1 },
   centerBox: { alignItems: 'center', justifyContent: 'center', flex: 1, padding: spacing.xl },
