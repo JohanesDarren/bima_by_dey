@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as Speech from 'expo-speech';
-import { streamKroomboxChat } from '../services/ai/transport';
-import { runConversationTurn } from '../services/ai/conversationTurn';
+import { runTurnWithQualityRetry } from '../services/ai/qualityRetry';
 import { createChatController } from '../services/chatController';
 import type { ChatController, ChatState } from '../services/chatController';
 
@@ -32,7 +31,8 @@ export function useChatController({
 
   const [controller] = useState(() =>
     createChatController({
-      runTurn: (request, observer) => runConversationTurn(request, streamKroomboxChat, observer),
+      // Dibungkus pemeriksa mutu: jawaban yang tidak menjawab pertanyaan diulang sekali.
+      runTurn: runTurnWithQualityRetry,
       speech: {
         speak: (text) => Speech.speak(text, { language: 'id-ID', rate: 0.95 }),
         stop: () => Speech.stop(),

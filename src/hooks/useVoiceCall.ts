@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { streamKroomboxChat } from '../services/ai/transport';
-import { runConversationTurn } from '../services/ai/conversationTurn';
+import { runTurnWithQualityRetry } from '../services/ai/qualityRetry';
 import { createVoiceCall } from '../services/voiceCall';
 import type { VoiceCallContext } from '../services/voiceCall';
 import { createDeviceVoicePort } from '../services/voiceDevicePort';
@@ -43,7 +42,8 @@ export function useVoiceCall(
   const [call] = useState(() =>
     createVoiceCall({
       port: createDeviceVoicePort(),
-      runTurn: (request, observer) => runConversationTurn(request, streamKroomboxChat, observer),
+      // Dibungkus pemeriksa mutu: jawaban yang tidak menjawab pertanyaan diulang sekali.
+      runTurn: runTurnWithQualityRetry,
       getContext: () => latest.current,
       mode: initialMode.current,
     }),
