@@ -17,6 +17,7 @@ import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { useRotatingStage } from '../hooks/useRotatingStage';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { ChatMessageList } from './ChatMessageList';
+import { ChefMark } from './ChefMark';
 
 interface Props {
   context: string;
@@ -139,7 +140,7 @@ export function AICompanion({
         <View style={[styles.header, simple && styles.hidden]}>
           <View style={styles.identity}>
             <View style={styles.avatar}>
-              <MaterialIcons name="grain" size={18} color={colors.primaryDark} />
+              <ChefMark size={34} halo={false} accessibilityLabel="Chef Sorghum AI" />
             </View>
             <View>
               <Text style={styles.title}>Chef Sorghum AI</Text>

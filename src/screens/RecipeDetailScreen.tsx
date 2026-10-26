@@ -1,14 +1,8 @@
 import React, { useEffect } from 'react';
-import {
-  ActivityIndicator,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { ChefLoader } from '../components/ChefLoader';
 import { Button } from '../components/Button';
 import { Container } from '../components/Container';
 import { useFlowStore } from '../store/flowStore';
@@ -75,7 +69,7 @@ export function RecipeDetailScreen({ navigation, route }: Props) {
 
       {displayStatus === 'loading' ? (
         <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ChefLoader size={112} accessibilityLabel="Menyiapkan resep" />
           <Text style={styles.centerText}>Menyusun resep langkah demi langkah…</Text>
         </View>
       ) : displayStatus === 'error' ? (

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Button } from '../components/Button';
 import { SelectionChip } from '../components/SelectionChip';
+import { ChefLoader } from '../components/ChefLoader';
 import { MenuCard } from '../components/MenuCard';
 import {
   AGE_GROUPS,
@@ -186,7 +187,7 @@ export function BrowseScreen({ navigation }: Props) {
 
         {loadingMenus && menus.length === 0 ? (
           <View style={styles.stateBox} accessibilityLiveRegion="polite">
-            <ActivityIndicator size="large" color={colors.accent} />
+            <ChefLoader size={128} accessibilityLabel="Menyiapkan menu" />
             <Text style={styles.stateTitle}>Menyiapkan menu</Text>
             <Text style={styles.stateText}>Mengambil menu dari pengetahuan sorgum.</Text>
           </View>
