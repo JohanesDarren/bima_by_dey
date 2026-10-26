@@ -31,28 +31,31 @@ function styleBlock(key) {
   return m[1];
 }
 
-test('panel tidak memotong isinya sendiri', () => {
-  const panel = styleBlock('panel');
-  // Hanya nilai deklarasi yang diperiksa — komentar di dalam blok boleh menyebut
-  // "hidden" saat menjelaskan riwayat bug tanpa membuat uji gagal.
-  const declared = panel
-    .split('\n')
-    .map((line) => line.replace(/\/\/.*$/, '').trim())
-    .filter(Boolean)
-    .join(' ');
-  assert.doesNotMatch(
-    declared,
-    /overflow:\s*'hidden'/,
-    'panel memakai overflow hidden → baris tulis bisa terpotong',
-  );
+test('wadah tata letak tidak memotong isinya sendiri', () => {
+  // `overflow: 'hidden'` pada `avatar` memang disengaja (memotong karakter jadi
+  // bulat). Yang berbahaya hanya wadah TATA LETAK yang membungkus daftar pesan
+  // atau baris tulis — itu yang dulu memotong teks yang sedang diketik.
+  const LAYOUT_KEYS = ['panel', 'messages', 'composer', 'chatHeader'];
+  const offenders = [];
+  for (const key of LAYOUT_KEYS) {
+    const re = new RegExp(`\\n  ${key}: \\{([\\s\\S]*?)\\n  \\},`);
+    const m = src.match(re);
+    if (!m) continue;
+    const declared = m[1].replace(/\/\/.*$/gm, '');
+    if (/overflow:\s*'hidden'/.test(declared)) offenders.push(key);
+  }
+  assert.deepEqual(offenders, [], `wadah tata letak memotong isinya: ${offenders.join(', ')}`);
 });
 
-test('daftar pesan boleh menyusut agar baris tulis dapat ruang', () => {
+test('daftar pesan mengisi sisa ruang tanpa memotong baris tulis', () => {
   const messages = styleBlock('messages');
-  assert.match(
-    messages,
-    /flexShrink:\s*1/,
-    'messages harus flexShrink:1 supaya tidak mendorong composer keluar',
+  // `flex: 1` membuat daftar pesan mengambil ruang tersisa dan TIDAK mendorong
+  // baris tulis keluar layar (dulu dipatok maxHeight tanpa flexShrink).
+  assert.match(messages, /flex:\s*1/, 'messages harus flex:1');
+  assert.doesNotMatch(
+    messages.replace(/\/\/.*$/gm, ''),
+    /maxHeight/,
+    'messages tidak boleh dipatok maxHeight tanpa flexShrink',
   );
 });
 

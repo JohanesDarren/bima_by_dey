@@ -6,7 +6,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Button } from '../components/Button';
 import { AICompanion } from '../components/AICompanion';
 import { StepTimerCard } from '../components/StepTimerCard';
-import { VoiceCallModal } from '../components/VoiceCallModal';
+import { VoicePane } from '../components/VoicePane';
 import { RecipeCompleteChecklist } from '../components/RecipeCompleteChecklist';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { useStepTimer } from '../hooks/useStepTimer';
@@ -40,7 +40,8 @@ export function CookingScreen({ navigation, route }: Props) {
   const isGuest = useAuthStore((s) => s.isGuest);
 
   const [stepIdx, setStepIdx] = useState(0);
-  const [voiceCallVisible, setVoiceCallVisible] = useState(false);
+  /** Mode tampilan: obrolan teks atau karakter suara (bukan modal layar penuh). */
+  const [mode, setMode] = useState<'chat' | 'voice'>('chat');
   /** Checklist penyelesaian tampil → animasi jalan → kembali ke beranda. */
   const [completing, setCompleting] = useState(false);
   const [notes, setNotes] = useState<string[]>([]);
@@ -147,8 +148,18 @@ export function CookingScreen({ navigation, route }: Props) {
               />
             ) : null}
 
-            {/* Aksi */}
+            {/* Aksi: ganti mode + lanjut langkah */}
             <View style={styles.actionRow}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={mode === 'chat' ? 'Ganti ke mode suara' : 'Ganti ke mode chat'}
+                onPress={() => setMode((current) => (current === 'chat' ? 'voice' : 'chat'))}
+                style={styles.modeBtn}
+              >
+                <Text style={styles.modeBtnText}>
+                  {mode === 'chat' ? 'Mode Suara' : 'Mode Chat'}
+                </Text>
+              </TouchableOpacity>
               <Button
                 title={isLast ? 'Selesai' : 'Selesai — Lanjut'}
                 onPress={goNext}
@@ -158,27 +169,27 @@ export function CookingScreen({ navigation, route }: Props) {
           </View>
         ) : null}
 
-        {/* AI menemani — diskusi saat masak (teks + voice dua arah) */}
-        <AICompanion
-          context={buildCookingChatContext(recipe, stepIdx)}
-          recipeName={recipe.name}
-          recipeMeta={`Langkah ${stepIdx + 1} dari ${steps.length}`}
-          simple
-          onVoiceCall={() => setVoiceCallVisible(true)}
-          placeholder={`Tanya soal langkah ${stepIdx + 1} / tanya bahan…`}
-          // Hanya catatan terakhir yang disimpan ke riwayat — jangan menumpuk di memori.
-          onAssistantMessage={(t) => setNotes((n) => [...n, t].slice(-MAX_NOTES))}
-        />
+        {/* AI menemani — obrolan teks (disembunyikan saat mode suara aktif) */}
+        <View style={mode === 'chat' ? styles.flex : styles.hidden}>
+          <AICompanion
+            context={buildCookingChatContext(recipe, stepIdx)}
+            recipeName={recipe.name}
+            recipeMeta={`Langkah ${stepIdx + 1} dari ${steps.length}`}
+            simple
+            placeholder={`Tanya soal langkah ${stepIdx + 1} / tanya bahan…`}
+            // Hanya catatan terakhir yang disimpan ke riwayat — jangan menumpuk di memori.
+            onAssistantMessage={(t) => setNotes((n) => [...n, t].slice(-MAX_NOTES))}
+          />
+        </View>
 
         {isGuest && !keyboardUp ? (
           <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text>
         ) : null}
       </ScrollView>
 
-      {voiceCallVisible ? (
-        <VoiceCallModal
-          visible={voiceCallVisible}
-          onClose={() => setVoiceCallVisible(false)}
+      {/* Mode suara tampil sebaris di halaman ini, bukan modal layar penuh. */}
+      {mode === 'voice' ? (
+        <VoicePane
           segment={segment}
           recipeName={recipe.name}
           stepLabel={buildCookingStepLabel(recipe, stepIdx)}
@@ -249,6 +260,17 @@ const styles = StyleSheet.create({
   stepNumBigText: { color: colors.textOnPrimary, fontSize: 18, fontWeight: '800' },
   stepTitle: { ...typography.h3, color: colors.text, flex: 1 },
   stepInstr: { ...typography.body, color: colors.text, marginTop: spacing.md, lineHeight: 24 },
+  modeBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+    marginRight: spacing.sm,
+  },
+  modeBtnText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
+  hidden: { display: 'none' },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
   nextBtn: { flex: 1 },
   centerBox: { alignItems: 'center', justifyContent: 'center', flex: 1, padding: spacing.xl },

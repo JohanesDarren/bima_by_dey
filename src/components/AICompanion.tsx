@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -10,13 +10,12 @@ import {
   View,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, typography, elevation } from '../theme';
+import { colors, radius, spacing, typography } from '../theme';
 import { CHAT_LOADING_STAGES } from '../utils/assistantText';
 import { useChatController } from '../hooks/useChatController';
-import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { useRotatingStage } from '../hooks/useRotatingStage';
 import { useVoiceInput } from '../hooks/useVoiceInput';
-import { ChatMessageList } from './ChatMessageList';
+import { ChefLoader } from './ChefLoader';
 import { ChefMark } from './ChefMark';
 
 interface Props {
@@ -31,16 +30,6 @@ interface Props {
 }
 
 const SUGGESTIONS = ['Pengganti bahan?', 'Ubah jumlah porsi?', 'Jelaskan langkah ini'];
-
-/** "Bubur Sorgum Manis" → "BS". */
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join('')
-    .toUpperCase();
-}
 
 /**
  * Panel chat — MURNI tampilan. Percakapan, TTS, dan riwayat hidup di controller
@@ -72,9 +61,10 @@ export function AICompanion({
    * tertutup. Di sini tidak ada tebakan waktu: saat keyboard muncul, panel dipaksa
    * mengisi ruang sisa (flex), sehingga kolom tulis selalu tepat di atas keyboard.
    */
-  const keyboardUp = useKeyboardVisible();
   /** Tahapan menunggu jawaban (teks bergantian) — lihat CHAT_LOADING_STAGES. */
   const loadingLabel = useRotatingStage(streaming, CHAT_LOADING_STAGES);
+  /** Gulir otomatis ke pesan terbaru saat isi bertambah. */
+  const listRef = useRef<ScrollView>(null);
   /**
    * Satu tombol: ketuk untuk mulai merekam, ketuk lagi untuk berhenti lalu kirim.
    * Transkrip masuk ke kotak pesan dan langsung dikirim lewat jalur chat yang sama,
@@ -87,65 +77,20 @@ export function AICompanion({
 
   return (
     <KeyboardAvoidingView
+      style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={keyboardUp ? styles.fill : undefined}
     >
-      <View
-        style={[
-          styles.panel,
-          compact && styles.panelCompact,
-          keyboardUp && styles.fill,
-          elevation.sm,
-        ]}
-      >
-        <View style={[styles.recipeCard, simple && styles.hidden]}>
-          <View style={styles.recipeInitials}>
-            <Text style={styles.recipeInitialsText}>{initials(recipeName)}</Text>
+      <View style={styles.flex}>
+        {/* Kepala obrolan bergaya messenger. */}
+        <View style={styles.chatHeader}>
+          <View style={styles.avatar}>
+            <ChefMark size={36} halo={false} accessibilityLabel="Chef Sorghum AI" />
           </View>
-          <View style={styles.recipeCopy}>
-            <Text style={styles.recipeBadge}>RESEP AKTIF</Text>
-            <Text style={styles.recipeTitle} numberOfLines={1}>
-              {recipeName}
-            </Text>
-            {recipeMeta ? <Text style={styles.recipeMeta}>{recipeMeta}</Text> : null}
-          </View>
-          <MaterialIcons name="chevron-right" size={20} color={colors.accent} />
-        </View>
-
-        <View style={styles.modeToggle} accessibilityRole="tablist">
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityState={{ selected: false }}
-            onPress={onVoiceCall}
-            disabled={!onVoiceCall}
-            style={styles.modeButton}
-          >
-            <MaterialIcons name="phone-in-talk" size={16} color={colors.textMuted} />
-            <Text style={styles.modeText}>Panggilan Suara</Text>
-          </Pressable>
-          <View
-            accessibilityRole="tab"
-            accessibilityState={{ selected: true }}
-            style={[styles.modeButton, styles.modeButtonActive]}
-          >
-            <MaterialIcons name="chat-bubble-outline" size={16} color={colors.accent} />
-            <Text style={styles.modeTextActive}>Chat Teks</Text>
-          </View>
-        </View>
-
-        <View style={[styles.dateRow, simple && styles.hidden]}>
-          <Text style={styles.dateText}>HARI INI</Text>
-        </View>
-
-        <View style={[styles.header, simple && styles.hidden]}>
           <View style={styles.identity}>
-            <View style={styles.avatar}>
-              <ChefMark size={34} halo={false} accessibilityLabel="Chef Sorghum AI" />
-            </View>
-            <View>
-              <Text style={styles.title}>Chef Sorghum AI</Text>
-              <Text style={styles.subtitle}>Jawaban langsung dari RAG sorgum</Text>
-            </View>
+            <Text style={styles.title}>Chef Sorghum AI</Text>
+            <Text style={styles.subtitle} numberOfLines={1}>
+              {streaming ? loadingLabel : recipeMeta || 'Siap menemani memasak'}
+            </Text>
           </View>
           <Pressable
             accessibilityRole="switch"
@@ -168,51 +113,128 @@ export function AICompanion({
           </Pressable>
         </View>
 
-        <ChatMessageList
-          messages={messages}
-          loadingLabel={streaming ? loadingLabel : null}
-          style={[styles.messages, keyboardUp && styles.messagesKeyboard]}
-        />
-
+        {/* Balon pesan mengisi sisa tinggi layar. */}
         <ScrollView
-          horizontal
-          style={simple ? styles.hidden : undefined}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.suggestions}
+          style={styles.messages}
+          contentContainerStyle={styles.messagesContent}
           keyboardShouldPersistTaps="handled"
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+          ref={listRef}
         >
-          {SUGGESTIONS.map((suggestion) => (
-            <Pressable
-              key={suggestion}
-              onPress={() => chat.send(suggestion)}
-              disabled={streaming}
-              style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
+          <View style={styles.messageRow}>
+            <View style={styles.avatarSmall}>
+              <MaterialIcons name="grain" size={13} color={colors.primary} />
+            </View>
+            <View style={[styles.bubble, styles.bubbleAssistant]}>
+              <Text style={styles.bubbleText}>
+                Halo! Saya dampingi dari sini. Tanyakan takaran, pengganti bahan, atau langkah yang
+                belum jelas pada resep ini.
+              </Text>
+            </View>
+          </View>
+
+          {messages.map((message, index) => (
+            <View
+              key={`${message.role}-${index}`}
+              style={[styles.messageRow, message.role === 'user' && styles.messageRowUser]}
             >
-              <Text style={styles.suggestionText}>{suggestion}</Text>
-            </Pressable>
+              {message.role === 'assistant' ? (
+                <View style={styles.avatarSmall}>
+                  <MaterialIcons name="grain" size={13} color={colors.primary} />
+                </View>
+              ) : null}
+              <View
+                style={[
+                  styles.bubble,
+                  message.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant,
+                ]}
+              >
+                <Text style={[styles.bubbleText, message.role === 'user' && styles.bubbleTextUser]}>
+                  {message.content || '…'}
+                </Text>
+              </View>
+            </View>
           ))}
-          {lastQuestion && !streaming ? (
-            <Pressable
-              onPress={() => chat.send(lastQuestion)}
-              style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
-            >
-              <MaterialIcons name="refresh" size={14} color={colors.primary} />
-              <Text style={styles.suggestionText}>Ulangi</Text>
-            </Pressable>
+
+          {streaming ? (
+            <View style={styles.streamingRow} accessibilityLiveRegion="polite">
+              <ChefLoader size={56} accessibilityLabel="Chef AI sedang menyusun jawaban" />
+              <Text style={styles.streamLabel}>{loadingLabel}</Text>
+            </View>
           ) : null}
         </ScrollView>
 
+        {/* Saran singkat + ulangi pertanyaan terakhir. */}
+        <View style={styles.suggestionsWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.suggestionsContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {SUGGESTIONS.map((suggestion) => (
+              <Pressable
+                key={suggestion}
+                onPress={() => chat.send(suggestion)}
+                disabled={streaming}
+                style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
+              >
+                <Text style={styles.suggestionText}>{suggestion}</Text>
+              </Pressable>
+            ))}
+            {lastQuestion && !streaming ? (
+              <Pressable
+                onPress={() => chat.send(lastQuestion)}
+                style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}
+              >
+                <MaterialIcons name="refresh" size={13} color={colors.primary} />
+                <Text style={styles.suggestionText}>Ulangi</Text>
+              </Pressable>
+            ) : null}
+          </ScrollView>
+        </View>
+
+        {/* Kolom tulis. */}
         <View style={styles.composer}>
           <TextInput
             accessibilityLabel="Pesan untuk pendamping resep"
             style={styles.input}
             value={input}
             onChangeText={chat.setInput}
-            placeholder={placeholder || 'Tulis pertanyaan…'}
+            placeholder={
+              voice.recording
+                ? 'Sedang merekam… ketuk untuk berhenti'
+                : voice.transcribing
+                  ? 'Mengubah suara menjadi teks…'
+                  : placeholder || 'Tulis pertanyaan…'
+            }
             placeholderTextColor={colors.textSubtle}
             onSubmitEditing={() => chat.send()}
+            editable={!voice.recording && !voice.transcribing}
             multiline
           />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={voice.recording ? 'Hentikan pesan suara' : 'Kirim pesan suara'}
+            accessibilityState={{
+              selected: voice.recording,
+              disabled: streaming || voice.transcribing,
+            }}
+            onPress={voice.toggle}
+            disabled={streaming}
+            style={({ pressed }) => [
+              styles.voiceButton,
+              voice.recording && styles.voiceButtonRecording,
+              streaming && styles.sendDisabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <MaterialIcons
+              name={voice.recording ? 'stop' : voice.transcribing ? 'hourglass-top' : 'mic'}
+              size={20}
+              color={voice.recording ? colors.white : colors.primary}
+            />
+          </Pressable>
           <Pressable
             accessibilityLabel={streaming ? 'Hentikan jawaban' : 'Kirim pesan'}
             onPress={streaming ? chat.stop : () => chat.send()}
@@ -229,27 +251,9 @@ export function AICompanion({
               <MaterialIcons name="arrow-upward" size={19} color={colors.primaryDark} />
             )}
           </Pressable>
-          <Pressable
-            accessibilityLabel={voice.recording ? 'Berhenti merekam dan kirim' : 'Rekam pertanyaan'}
-            accessibilityState={{ busy: voice.transcribing, selected: voice.recording }}
-            onPress={voice.toggle}
-            disabled={streaming || voice.transcribing}
-            style={({ pressed }) => [
-              styles.micButton,
-              voice.recording && styles.micButtonActive,
-              (streaming || voice.transcribing) && styles.sendDisabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialIcons
-              name={voice.recording ? 'stop' : voice.transcribing ? 'hourglass-top' : 'mic'}
-              size={19}
-              color={voice.recording ? colors.surface : colors.primaryDark}
-            />
-          </Pressable>
         </View>
         {voice.error ? (
-          <Text style={styles.micError} accessibilityLiveRegion="polite">
+          <Text style={styles.voiceError} accessibilityLiveRegion="polite">
             {voice.error}
           </Text>
         ) : null}
@@ -259,128 +263,87 @@ export function AICompanion({
 }
 
 const styles = StyleSheet.create({
-  panel: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: spacing.lg,
-    // Dulu `overflow: 'hidden'`: panel memotong isinya sendiri. Karena panel ini
-    // diletakkan di dalam ScrollView layar masak (tingginya tidak dibatasi), daftar
-    // pesan yang panjang mendorong baris tulis keluar panel — teks yang diketik
-    // jadi tidak terlihat. Isi panel sekarang bebas, dan sudutnya tetap rapi
-    // karena tiap bagian sudah punya latar sendiri.
-    overflow: 'visible',
-  },
-  panelCompact: { marginTop: spacing.sm },
-  hidden: { display: 'none' },
-  recipeCard: {
-    margin: spacing.md,
-    marginBottom: spacing.sm,
-    minHeight: 82,
-    borderRadius: radius.xl,
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderWidth: 1,
-    borderColor: colors.surfaceDarkAlt,
+  flex: { flex: 1 },
+  chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-  },
-  recipeInitials: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceDarkAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  recipeInitialsText: { ...typography.h3, color: colors.accent, fontSize: 16 },
-  recipeCopy: { flex: 1, minWidth: 0 },
-  recipeBadge: { ...typography.label, color: colors.accent, fontSize: 9 },
-  recipeTitle: {
-    ...typography.bodySm,
-    color: colors.textOnPrimary,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  recipeMeta: { ...typography.caption, color: '#B8C5BB', marginTop: 2 },
-  modeToggle: {
-    marginHorizontal: spacing.md,
-    padding: 4,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    flexDirection: 'row',
-  },
-  modeButton: {
-    flex: 1,
-    minHeight: 38,
-    borderRadius: radius.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  modeButtonActive: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.accent },
-  modeText: { ...typography.caption, color: colors.textMuted, fontWeight: '700' },
-  modeTextActive: { ...typography.caption, color: colors.primary, fontWeight: '800' },
-  dateRow: { alignItems: 'center', paddingTop: spacing.md },
-  dateText: {
-    ...typography.label,
-    fontSize: 9,
-    color: colors.textMuted,
-    backgroundColor: colors.surfaceAlt,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-  },
-  header: {
-    minHeight: 68,
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 0,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.accent,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  title: { ...typography.h3, fontSize: 17, color: colors.text },
+  identity: { flex: 1, minWidth: 0 },
+  title: { ...typography.bodySm, color: colors.text, fontWeight: '800' },
   subtitle: { ...typography.caption, color: colors.textMuted },
   speakToggle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
   speakToggleOn: { backgroundColor: colors.accent },
-  /**
-   * Daftar pesan boleh menyusut (`flexShrink`) supaya baris tulis di bawahnya
-   * TIDAK pernah terpotong. Sebelumnya hanya `maxHeight: 280` tanpa shrink:
-   * ketika isi pesan panjang dan panel dibatasi `overflow: 'hidden'`, baris tulis
-   * terdorong keluar panel sehingga teks yang diketik tidak terlihat.
-   */
-  messages: { maxHeight: 280, minHeight: 130, flexShrink: 1 },
-  /** Keyboard terbuka: panel & daftar pesan mengisi ruang sisa, bukan tinggi tetap. */
-  fill: { flex: 1 },
-  messagesKeyboard: { flex: 1, minHeight: 96, maxHeight: 9999 },
-  suggestions: { gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
+  messages: { flex: 1 },
+  messagesContent: { padding: spacing.md, paddingBottom: spacing.lg },
+  messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: spacing.sm },
+  messageRowUser: { justifyContent: 'flex-end' },
+  avatarSmall: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bubble: {
+    maxWidth: '82%',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radius.lg,
+  },
+  bubbleAssistant: { backgroundColor: colors.surfaceAlt, borderBottomLeftRadius: 4 },
+  bubbleUser: { backgroundColor: colors.primary, borderBottomRightRadius: 4 },
+  bubbleText: { ...typography.bodySm, color: colors.text },
+  bubbleTextUser: { color: colors.textOnPrimary },
+  streamingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingLeft: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  streamLabel: { ...typography.caption, color: colors.textMuted, flex: 1 },
+  suggestionsWrap: {
+    height: 38,
+    marginVertical: 4,
+    justifyContent: 'center',
+  },
+  suggestionsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    gap: 8,
+  },
+  /** Saran dibuat ringkas supaya tidak memakan ruang layar HP. */
   suggestion: {
-    minHeight: 38,
+    height: 30,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     gap: 4,
     alignItems: 'center',
@@ -395,8 +358,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.surfaceAlt,
-    // Baris tulis tidak boleh ikut menyusut — kalau menyusut, teks yang sedang
-    // diketik terpotong oleh `overflow: 'hidden'` pada panel.
+    // Baris tulis tidak boleh menyusut — kalau menyusut, teks yang diketik
+    // terpotong dan pengguna tidak melihat apa yang sedang ia tulis.
     flexShrink: 0,
   },
   input: {
@@ -409,9 +372,26 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     fontSize: 14,
     color: colors.text,
-    // Warna teks eksplisit dan kontras: pengguna harus melihat apa yang diketik.
     includeFontPadding: false,
     textAlignVertical: 'center',
+  },
+  voiceButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceButtonRecording: { backgroundColor: colors.danger, borderColor: colors.danger },
+  voiceError: {
+    ...typography.caption,
+    color: colors.danger,
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
   },
   sendButton: {
     width: 44,
@@ -422,22 +402,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendDisabled: { opacity: 0.38 },
-  micButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  micButtonActive: { backgroundColor: colors.danger, borderColor: colors.danger },
-  micError: {
-    ...typography.caption,
-    color: colors.danger,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-  },
   pressed: { opacity: 0.7 },
 });
