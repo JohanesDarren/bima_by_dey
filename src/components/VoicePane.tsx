@@ -33,15 +33,20 @@ export function VoicePane({
   stepsDigest,
 }: Props) {
   /**
-   * Mode push-to-talk: mikrofon hanya menyala selama tombol ditahan, sehingga HP
-   * dengan deteksi suara terlalu lebar tidak merekam sendiri.
+   * MODE BEBAS-TANGAN.
+   *
+   * Tekan-dan-tahan tidak masuk akal saat memasak: tangan sedang memegang pisau,
+   * mengaduk, atau berlumur tepung. Jadi mikrofon menyala sendiri seperti `auto`,
+   * tetapi setiap kalimat disaring dulu (utils/voiceGate) — gumaman dan salah
+   * dengar dibuang tanpa suara, sehingga HP berambang lebar tidak lagi memicu
+   * jawaban yang tidak diminta.
    */
   const { state, errorMsg, startCall, stopCall, pressStart, pressEnd } = useVoiceCall(
     segment,
     recipeName,
     stepLabel,
     recipeIngredients,
-    'push',
+    'handsfree',
     stepsDigest,
   );
   // Status berputar selama Chef AI menyusun jawaban (selaras dengan layar memuat lain).
@@ -124,35 +129,37 @@ export function VoicePane({
       </Text>
 
       {/*
-        TOMBOL TEKAN-DAN-TAHAN. Mikrofon hanya menyala selama tombol ditahan, jadi
-        HP dengan deteksi suara terlalu lebar tidak merekam sendiri. `onPressOut`
-        tetap terpanggil bila jari bergeser keluar tombol, sehingga rekaman tidak
-        pernah tertinggal menyala.
+        MODE BEBAS-TANGAN: tidak ada tombol yang harus ditahan. Pengguna cukup
+        bicara. Lencana di bawah menegaskan bahwa mikrofon memang sedang hidup,
+        supaya tidak terasa seperti aplikasi yang diam saja.
+
+        Tombol "Bicara sekarang" BUKAN syarat — hanya jalan keluar kalau penyaring
+        kebisingan ternyata membuang kalimat yang sah (mis. suara pengguna pelan).
+        Karena itu tombolnya kecil dan tidak menonjol.
       */}
       {state !== 'error' ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Tekan dan tahan untuk bicara"
-          accessibilityHint="Lepas tombol untuk mengirim pertanyaan"
-          accessibilityState={{ disabled: busy, selected: state === 'listening' }}
-          disabled={busy}
-          onPressIn={pressStart}
-          onPressOut={pressEnd}
-          style={[
-            styles.talkButton,
-            state === 'listening' && styles.talkButtonActive,
-            busy && styles.talkButtonDisabled,
-          ]}
-        >
-          <MaterialIcons
-            name={state === 'listening' ? 'graphic-eq' : 'mic'}
-            size={22}
-            color={state === 'listening' ? colors.white : colors.primary}
-          />
-          <Text style={[styles.talkLabel, state === 'listening' && styles.talkLabelActive]}>
-            {state === 'listening' ? 'Lepas untuk kirim' : 'Tahan untuk bicara'}
-          </Text>
-        </Pressable>
+        <View style={styles.handsfreeRow}>
+          <View style={[styles.handsfreePill, state === 'listening' && styles.handsfreePillOn]}>
+            <View style={[styles.handsfreeDot, state === 'listening' && styles.handsfreeDotOn]} />
+            <Text style={[styles.handsfreeText, state === 'listening' && styles.handsfreeTextOn]}>
+              {state === 'listening' ? 'Mikrofon aktif — silakan bicara' : 'Menunggu Chef AI'}
+            </Text>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Bicara sekarang"
+            accessibilityHint="Pakai ini kalau kalimatmu tidak tertangkap"
+            accessibilityState={{ disabled: busy }}
+            disabled={busy}
+            onPressIn={pressStart}
+            onPressOut={pressEnd}
+            style={[styles.sayNowButton, busy && styles.talkButtonDisabled]}
+          >
+            <MaterialIcons name="mic" size={16} color={colors.primary} />
+            <Text style={styles.sayNowText}>Bicara sekarang</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       {state === 'error' ? (
@@ -217,6 +224,33 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     textAlign: 'center',
   },
+  handsfreeRow: { alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
+  handsfreePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceAlt,
+  },
+  handsfreePillOn: { backgroundColor: colors.primaryLight },
+  handsfreeDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.textSubtle },
+  handsfreeDotOn: { backgroundColor: colors.primary },
+  handsfreeText: { ...typography.caption, color: colors.textMuted },
+  handsfreeTextOn: { color: colors.primaryDark, fontWeight: '700' },
+  sayNowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+  },
+  sayNowText: { fontSize: 12, fontWeight: '700', color: colors.primary },
   talkButton: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -40,7 +40,7 @@ export type VoiceCallPhase =
  * walau pengguna diam, dan panggilan jadi berputar tanpa pernah benar-benar
  * menunggu pertanyaan. Dengan push, pengguna yang menentukan kapan bicara.
  */
-export type VoiceCallMode = 'auto' | 'push';
+export type VoiceCallMode = 'auto' | 'push' | 'handsfree';
 
 export interface VoiceCallState {
   phase: VoiceCallPhase;
@@ -251,6 +251,10 @@ export function reduceVoiceCall(state: VoiceCallState, event: VoiceCallEvent): V
 
     case 'restart-due':
       if (!isLive(state, event.generation) || state.processing) return unchanged(state);
+      // `handsfree` juga menyalakan ulang mikrofon sendiri: pengguna memasak dan
+      // tidak memegang HP. Yang membedakannya dari `auto` adalah penyaring di
+      // lapisan pemanggil — kalimat pendek/ragu dari kebisingan dibuang sebelum
+      // sampai ke `heard`.
       if (state.mode === 'push') return unchanged(state);
       return { state, effects: [{ type: 'prepare-mic', generation: event.generation }] };
 

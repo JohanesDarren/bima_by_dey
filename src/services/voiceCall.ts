@@ -3,6 +3,7 @@ import type { TurnRunner } from './ai/conversationTurn';
 import { describeError } from './errors';
 import { VOICE_MAX_WORDS } from '../utils/assistantText';
 import { VOICE_PERSONA, VOICE_RULES } from '../prompts/chefPrompt';
+import { judgeTranscript } from '../utils/voiceGate';
 import { reduceVoiceCall, initialVoiceCallState } from './voiceCallMachine';
 import type {
   MicPrepareOutcome,
@@ -25,7 +26,7 @@ import type {
 
 /** Penerima peristiwa dari pendengar mikrofon yang sedang menyala. */
 export interface MicSink {
-  onResult(result: { text: string; isFinal: boolean }): void;
+  onResult(result: { text: string; isFinal: boolean; confidence?: number }): void;
   onError(error: { code: string; message: string }): void;
   /** Pendengar berhenti sendiri (diam terlalu lama, selesai satu kalimat, dll). */
   onEnd(): void;
@@ -163,8 +164,16 @@ export function createVoiceCall(deps: VoiceCallDeps): VoiceCall {
       case 'start-mic':
         try {
           port.startMic({
-            onResult: ({ text, isFinal }) =>
-              dispatch({ type: 'heard', generation: effect.generation, text, isFinal }),
+            onResult: ({ text, isFinal, confidence }) => {
+              // Mode bebas-tangan: mikrofon menyala sendiri, jadi hasil pengenal
+              // disaring dulu. Kebisingan dapur ("eh", "ya", salah dengar pendek)
+              // dibuang tanpa suara supaya tidak memicu jawaban yang tidak diminta.
+              if (isFinal && state.mode === 'handsfree') {
+                const verdict = judgeTranscript(text, confidence ?? -1);
+                if (!verdict.accept) return;
+              }
+              dispatch({ type: 'heard', generation: effect.generation, text, isFinal });
+            },
             onError: ({ code, message }) =>
               dispatch({ type: 'mic-error', generation: effect.generation, code, message }),
             onEnd: () => dispatch({ type: 'mic-ended', generation: effect.generation }),

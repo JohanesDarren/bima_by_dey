@@ -67,7 +67,13 @@ export function createDeviceVoicePort(): VoicePort {
       detach();
       subscriptions = [
         active.addListener('result', (event: ExpoSpeechRecognitionResultEvent) =>
-          sink.onResult({ text: event.results[0]?.transcript ?? '', isFinal: event.isFinal }),
+          sink.onResult({
+            text: event.results[0]?.transcript ?? '',
+            isFinal: event.isFinal,
+            // Keyakinan pengenal dipakai penyaring mode bebas-tangan; -1 berarti
+            // perangkat tidak melaporkannya.
+            confidence: event.results[0]?.confidence ?? -1,
+          }),
         ),
         active.addListener('error', (event: ExpoSpeechRecognitionErrorEvent) =>
           sink.onError({ code: event.error, message: event.message }),
