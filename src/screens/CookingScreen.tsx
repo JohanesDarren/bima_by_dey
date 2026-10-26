@@ -7,6 +7,7 @@ import { Button } from '../components/Button';
 import { AICompanion } from '../components/AICompanion';
 import { StepTimerCard } from '../components/StepTimerCard';
 import { VoiceCallModal } from '../components/VoiceCallModal';
+import { RecipeCompleteChecklist } from '../components/RecipeCompleteChecklist';
 import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { useStepTimer } from '../hooks/useStepTimer';
 import { useAuthStore } from '../store/authStore';
@@ -34,10 +35,13 @@ const MAX_NOTE_LENGTH = 160;
 export function CookingScreen({ navigation, route }: Props) {
   const { recipe } = route.params ?? {};
   const segment = useFlowStore((s) => s.segment);
+  const clearMenus = useFlowStore((s) => s.setCategory);
   const isGuest = useAuthStore((s) => s.isGuest);
 
   const [stepIdx, setStepIdx] = useState(0);
   const [voiceCallVisible, setVoiceCallVisible] = useState(false);
+  /** Checklist penyelesaian tampil → animasi jalan → kembali ke beranda. */
+  const [completing, setCompleting] = useState(false);
   const [notes, setNotes] = useState<string[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   /**
@@ -78,7 +82,9 @@ export function CookingScreen({ navigation, route }: Props) {
           // gagal simpan — jangan blokir navigasi
         }
       }
-      navigation.navigate('History');
+      // Tampilkan checklist penyelesaian lebih dulu; setelah animasi selesai
+      // pengguna dikembalikan ke beranda untuk memilih kategori menu lagi.
+      setCompleting(true);
       return;
     }
     setStepIdx((i) => i + 1);
@@ -176,6 +182,26 @@ export function CookingScreen({ navigation, route }: Props) {
           recipeName={recipe.name}
           stepLabel={buildCookingStepLabel(recipe, stepIdx)}
           recipeIngredients={ingredientList(recipe) ?? undefined}
+        />
+      ) : null}
+
+      {/*
+        Checklist penyelesaian. Setelah animasi selesai, kembali ke beranda
+        (Browse) supaya pengguna bisa memilih kategori dan membuat menu lagi.
+        `popToTop` dipakai agar tumpukan Cooking/RecipeDetail tidak menumpuk,
+        dan kategori direset supaya pilihan menu dimulai dari awal.
+      */}
+      {completing ? (
+        <RecipeCompleteChecklist
+          recipeName={recipe.name}
+          stepCount={steps.length}
+          onDone={() => {
+            setCompleting(false);
+            // Kosongkan daftar menu lama: setelah selesai memasak, beranda
+            // kembali menampilkan pilihan kategori, bukan menu yang sudah lewat.
+            clearMenus(null);
+            navigation.popToTop();
+          }}
         />
       ) : null}
     </SafeAreaView>
