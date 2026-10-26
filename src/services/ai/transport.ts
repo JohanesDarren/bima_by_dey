@@ -108,13 +108,20 @@ export function streamKroomboxChat(
     body: JSON.stringify({
       message: req.message,
       history: req.history ?? [],
-      // Model eksplisit: `null` membuat server memilih model yang bisa 503 / diam
-      // total (terukur 120 detik tanpa satu byte). Lihat catatan di kroomboxConfig.
+      // Model DIPATOK. Diukur 2026-10-26 dengan prompt yang sama:
+      //   model null                                  → 60 detik tanpa satu byte
+      //   kc/nvidia/nemotron-3-ultra-550b-a55b:free   → 1,5 detik, jawaban benar
+      // Rute default server sudah tidak melayani; tanpa patokan ini menu gagal dimuat.
       model: req.model ?? KROOMBOX_MODEL,
-      // Default HIDUP. Aplikasi ini menjawab dari basis pengetahuan sorgum; tanpa
-      // retrieval jawabannya karangan model. Tidak ada pemanggil yang mengirim
-      // useRag, jadi default `false` membuat seluruh menu & resep kehilangan RAG.
-      useRag: req.useRag ?? true,
+      // Default MATI: retrieval di sisi server terbukti tidak relevan untuk app ini
+      // (sumber terukur skor ≈0.005, +3-13 detik per permintaan). Nyalakan hanya bila
+      // pemanggil memang memintanya secara eksplisit.
+      //
+      // Terukur ulang 2026-10-26 dengan prompt menu yang sama:
+      //   useRag true  → 180 detik tanpa satu byte (habis waktu)
+      //   useRag false → 8,5 detik, JSON valid
+      // Jangan diubah tanpa mengukur ulang; ini yang membuat menu gagal dimuat.
+      useRag: req.useRag ?? false,
       // Selalu streaming: jawaban RAG terstruktur bisa makan 1-4 menit, dan
       // sambungan SSE menjaga proxy tetap hidup (menghindari 502 gateway).
       stream: true,
