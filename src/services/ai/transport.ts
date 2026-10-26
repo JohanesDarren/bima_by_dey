@@ -3,6 +3,7 @@ import {
   KROOMBOX_API_KEY,
   KROOMBOX_BASE_URL,
   KROOMBOX_CHAT_ENDPOINT,
+  KROOMBOX_MODEL,
 } from '../../lib/kroomboxConfig';
 import { CircuitBreaker, CircuitOpenError } from '../breaker';
 import { completeJsonSlice } from './json';
@@ -107,11 +108,13 @@ export function streamKroomboxChat(
     body: JSON.stringify({
       message: req.message,
       history: req.history ?? [],
-      model: req.model ?? null,
-      // Default MATI: retrieval di sisi server terbukti tidak relevan untuk app ini
-      // (sumber terukur skor ≈0.005, +3-13 detik per permintaan). Nyalakan hanya bila
-      // pemanggil memang memintanya secara eksplisit.
-      useRag: req.useRag ?? false,
+      // Model eksplisit: `null` membuat server memilih model yang bisa 503 / diam
+      // total (terukur 120 detik tanpa satu byte). Lihat catatan di kroomboxConfig.
+      model: req.model ?? KROOMBOX_MODEL,
+      // Default HIDUP. Aplikasi ini menjawab dari basis pengetahuan sorgum; tanpa
+      // retrieval jawabannya karangan model. Tidak ada pemanggil yang mengirim
+      // useRag, jadi default `false` membuat seluruh menu & resep kehilangan RAG.
+      useRag: req.useRag ?? true,
       // Selalu streaming: jawaban RAG terstruktur bisa makan 1-4 menit, dan
       // sambungan SSE menjaga proxy tetap hidup (menghindari 502 gateway).
       stream: true,

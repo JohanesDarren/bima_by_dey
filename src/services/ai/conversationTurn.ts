@@ -133,11 +133,22 @@ export function runConversationTurn(
       const handlers: StreamHandlers = {
         onToken: (delta) => {
           raw += delta;
-          if (observer.onPartial) {
-            // Teks bersih sementara: chat menampilkan balon yang jujur walau server
-            // menyisipkan pesan kegagalannya di tengah jawaban.
-            observer.onPartial(readAssistantReply(raw, { maxWords: request.maxWords }).text);
+          if (!observer.onPartial) return;
+
+          const partial = readAssistantReply(raw, { maxWords: request.maxWords });
+
+          // Jangan tampilkan teks kegagalan server sebagai jawaban. Server mengirim
+          // pesannya sebagai delta biasa, jadi tanpa penjagaan ini pengguna sempat
+          // membaca "Server AI gagal merespons: Error code: 503 …" sebelum percobaan
+          // ulang selesai. Selama masih percobaan ulang, balon dikosongkan.
+          if (partial.kind === 'failure' && attempt < MAX_ATTEMPTS) {
+            observer.onPartial('');
+            return;
           }
+
+          // Teks bersih sementara: chat menampilkan balon yang jujur walau server
+          // menyisipkan pesan kegagalannya di tengah jawaban.
+          observer.onPartial(partial.text);
         },
         onDone: () => {
           if (settled || closedByCaller) return;

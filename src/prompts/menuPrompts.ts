@@ -38,7 +38,8 @@ const CATEGORY_LABEL: Record<FoodCategory, string> = {
   soup: 'soup (berkuah) — hidangan berkuah (sup, soto, sayur bening). BUKAN minuman, gorengan, atau kue.',
   dessert:
     'dessert (hidangan penutup) — manis (puding, kue, es, bubur manis). BUKAN masakan gurih seperti sup ayam atau tumis.',
-  snack: 'snack (kudapan) — camilan ringan porsi kecil (kue, keripik, bola-bola, biskuit). BUKAN hidangan utama atau minuman.',
+  snack:
+    'snack (kudapan) — camilan ringan porsi kecil (kue, keripik, bola-bola, biskuit). BUKAN hidangan utama atau minuman.',
   beverage:
     'beverage (minuman) — WAJIB minuman yang diminum (smoothie, jus, susu/sari sorgum, wedang). BUKAN sup, bubur, atau makanan berkuah.',
   other: 'lainnya',

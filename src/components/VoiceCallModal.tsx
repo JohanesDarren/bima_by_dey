@@ -132,6 +132,26 @@ export function VoiceCallModal({
           <Text style={styles.status} accessibilityLiveRegion="polite">
             {status}
           </Text>
+
+          {/*
+            Petunjuk pemakaian. Sebelumnya hanya ada satu kata status, sehingga
+            pengguna baru tidak tahu apakah harus bicara, menunggu, atau menekan
+            sesuatu. Tiap keadaan kini menyebut tindakan berikutnya.
+          */}
+          <Text style={styles.hint}>
+            {muted
+              ? 'Mikrofon mati. Tekan tombol mikrofon untuk bicara lagi.'
+              : state === 'listening'
+                ? 'Bicara langsung, lalu berhenti sejenak. Chef AI menjawab dengan suara.'
+                : state === 'thinking'
+                  ? 'Tunggu sebentar, jawaban sedang disusun.'
+                  : state === 'speaking'
+                    ? 'Chef AI sedang berbicara. Tunggu sampai selesai, lalu bicara lagi.'
+                    : state === 'error'
+                      ? 'Tekan Coba lagi, atau tutup untuk pindah ke mode Chat.'
+                      : 'Menyiapkan mikrofon dan suara.'}
+          </Text>
+
           {state === 'error' ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>{errorMsg || 'Layanan suara belum tersedia.'}</Text>
@@ -215,6 +235,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#BDE5CF',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  hint: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.lg,
   },
   status: {
     ...typography.body,

@@ -37,7 +37,9 @@ const { buildRecipePrompt, buildMenuPrompt, RECIPE_MAX_TOKENS, MENU_MAX_TOKENS }
 const { buildChefMessage, buildChefHistory, HISTORY_LIMIT } = require(
   path.join(OUT, 'src', 'prompts', 'chefPrompt.js'),
 );
-const { normalizeMenuList, fitsCategory } = require(path.join(OUT, 'src', 'services', 'menuNormalizer.js'));
+const { normalizeMenuList, fitsCategory } = require(
+  path.join(OUT, 'src', 'services', 'menuNormalizer.js'),
+);
 const { isFatalFailure } = require(path.join(OUT, 'src', 'services', 'ai', 'retryPolicy.js'));
 const { ServerSideError, KroomboxTimeoutError } = require(
   path.join(OUT, 'src', 'services', 'ai', 'failures.js'),
