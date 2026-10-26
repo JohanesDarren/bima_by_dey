@@ -62,7 +62,7 @@ export function CookingScreen({ navigation, route }: Props) {
    * daftar pesan memakai `flex:1`, dan `flex:1` di dalam induk tanpa tinggi pasti
    * akan menciut jadi nol — itulah yang membuat panel chat hilang sama sekali.
    */
-  const dockHeight = Math.max(240, Math.min(380, (windowHeight - keyboardInset) * 0.52));
+  const dockHeight = Math.max(220, Math.min(330, (windowHeight - keyboardInset) * 0.42));
   /** Checklist penyelesaian tampil → animasi jalan → kembali ke beranda. */
   const [completing, setCompleting] = useState(false);
   const [notes, setNotes] = useState<string[]>([]);
@@ -124,7 +124,7 @@ export function CookingScreen({ navigation, route }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={[styles.header, elevation.sm]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -190,7 +190,7 @@ export function CookingScreen({ navigation, route }: Props) {
       <View style={styles.contentArea}>
         <ScrollView
           ref={scrollRef}
-          style={styles.stepScroll}
+          style={[styles.stepScroll, mode === 'voice' && styles.hidden]}
           scrollEnabled={!keyboardUp}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[styles.content, keyboardUp && styles.contentKeyboard]}
@@ -249,7 +249,7 @@ export function CookingScreen({ navigation, route }: Props) {
           style={[
             styles.chatDock,
             mode === 'chat' ? null : styles.hidden,
-            { height: dockHeight, paddingBottom: keyboardInset },
+            { height: dockHeight, minHeight: 0, paddingBottom: keyboardInset },
           ]}
         >
           <AICompanion
@@ -364,8 +364,13 @@ const styles = StyleSheet.create({
   modeTabTextActive: { color: colors.textOnPrimary },
   /** Area isi: kartu langkah + panel chat/karakter suara. */
   contentArea: { flex: 1 },
-  /** Kartu langkah MENGALAH ke panel chat, bukan mendorongnya keluar layar. */
-  stepScroll: { flexShrink: 1 },
+  /**
+   * Kartu langkah mengisi ruang yang tersisa dan MENGALAH ke panel chat.
+   * `flex: 1` + `flexShrink: 1` membuat tinggi ScrollView benar-benar terbatas;
+   * `flexShrink` saja tidak membatasi apa pun sehingga isinya bisa tergambar
+   * melewati batas dan tertutup bilah tab di atasnya.
+   */
+  stepScroll: { flex: 1, flexShrink: 1 },
   /** Wadah panel chat: menempel di dasar layar, di luar ScrollView. */
   chatDock: {
     backgroundColor: colors.surface,

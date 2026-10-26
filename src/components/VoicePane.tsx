@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ChefLoader } from './ChefLoader';
 import { useRotatingStage } from '../hooks/useRotatingStage';
@@ -77,7 +77,11 @@ export function VoicePane({
     state === 'thinking' ? 'hourglass-bottom' : state === 'speaking' ? 'graphic-eq' : 'mic';
 
   return (
-    <View style={styles.pane}>
+    <ScrollView
+      style={styles.paneScroll}
+      contentContainerStyle={styles.pane}
+      showsVerticalScrollIndicator={false}
+    >
       {/*
         Penanda bahwa mikrofon benar-benar hidup. Tanpa ini pengguna tidak tahu
         apakah panggilan sudah tersambung atau masih menyiapkan.
@@ -171,17 +175,19 @@ export function VoicePane({
           </Pressable>
         </View>
       ) : null}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  /** Pembungkus gulir: layar pendek menggulir, bukan meluber ke tombol di atas. */
+  paneScroll: { flex: 1 },
   pane: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
+    paddingVertical: spacing.lg,
   },
   orbOuter: {
     width: 176,

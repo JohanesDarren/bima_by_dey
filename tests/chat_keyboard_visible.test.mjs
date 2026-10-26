@@ -93,5 +93,16 @@ test('panel chat punya tinggi TETAP, bukan hanya maxHeight', () => {
 
 test('kartu langkah mengalah pada panel chat, bukan mendorongnya', () => {
   assert.match(cooking, /contentArea:\s*\{\s*flex:\s*1\s*\}/, 'contentArea harus flex:1');
-  assert.match(cooking, /stepScroll:\s*\{\s*flexShrink:\s*1\s*\}/, 'stepScroll harus flexShrink:1');
+  // flexShrink saja TIDAK membatasi tinggi ScrollView — isinya tetap bisa
+  // tergambar melewati batas dan tertutup bilah tab. Harus ada flex:1 juga.
+  assert.match(
+    cooking,
+    /stepScroll:\s*\{[^}]*flex:\s*1[^}]*\}/,
+    'stepScroll butuh flex:1 supaya tingginya benar-benar terbatas',
+  );
+  assert.match(
+    cooking,
+    /stepScroll:\s*\{[^}]*flexShrink:\s*1[^}]*\}/,
+    'stepScroll juga butuh flexShrink:1 agar mengalah ke panel chat',
+  );
 });
