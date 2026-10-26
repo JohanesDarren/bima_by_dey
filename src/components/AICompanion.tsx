@@ -265,7 +265,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     marginTop: spacing.lg,
-    overflow: 'hidden',
+    // Dulu `overflow: 'hidden'`: panel memotong isinya sendiri. Karena panel ini
+    // diletakkan di dalam ScrollView layar masak (tingginya tidak dibatasi), daftar
+    // pesan yang panjang mendorong baris tulis keluar panel — teks yang diketik
+    // jadi tidak terlihat. Isi panel sekarang bebas, dan sudutnya tetap rapi
+    // karena tiap bagian sudah punya latar sendiri.
+    overflow: 'visible',
   },
   panelCompact: { marginTop: spacing.sm },
   hidden: { display: 'none' },
@@ -359,7 +364,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   speakToggleOn: { backgroundColor: colors.accent },
-  messages: { maxHeight: 280, minHeight: 130 },
+  /**
+   * Daftar pesan boleh menyusut (`flexShrink`) supaya baris tulis di bawahnya
+   * TIDAK pernah terpotong. Sebelumnya hanya `maxHeight: 280` tanpa shrink:
+   * ketika isi pesan panjang dan panel dibatasi `overflow: 'hidden'`, baris tulis
+   * terdorong keluar panel sehingga teks yang diketik tidak terlihat.
+   */
+  messages: { maxHeight: 280, minHeight: 130, flexShrink: 1 },
   /** Keyboard terbuka: panel & daftar pesan mengisi ruang sisa, bukan tinggi tetap. */
   fill: { flex: 1 },
   messagesKeyboard: { flex: 1, minHeight: 96, maxHeight: 9999 },
@@ -384,6 +395,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.surfaceAlt,
+    // Baris tulis tidak boleh ikut menyusut — kalau menyusut, teks yang sedang
+    // diketik terpotong oleh `overflow: 'hidden'` pada panel.
+    flexShrink: 0,
   },
   input: {
     flex: 1,
@@ -395,6 +409,9 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     fontSize: 14,
     color: colors.text,
+    // Warna teks eksplisit dan kontras: pengguna harus melihat apa yang diketik.
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   sendButton: {
     width: 44,
