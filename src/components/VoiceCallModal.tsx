@@ -15,6 +15,7 @@ import { useRotatingStage } from '../hooks/useRotatingStage';
 import { useVoiceCall } from '../hooks/useVoiceCall';
 import { VOICE_LOADING_STAGES } from '../utils/assistantText';
 import type { Segment } from '../types';
+import type { VoiceCallMode } from '../services/voiceCallMachine';
 
 interface Props {
   visible: boolean;
@@ -34,19 +35,31 @@ export function VoiceCallModal({
   stepLabel,
   recipeIngredients,
 }: Props) {
-  const { state, errorMsg, startCall, stopCall } = useVoiceCall(
+  /**
+   * Mode panggilan. `push` dipakai secara bawaan karena deteksi suara otomatis
+   * bergantung pada perangkat: sebagian HP berambang sangat lebar sehingga
+   * mikrofon terus menangkap suara latar walau pengguna diam.
+   */
+  const [mode] = useState<VoiceCallMode>('push');
+  const { state, errorMsg, startCall, stopCall, pressStart, pressEnd } = useVoiceCall(
     segment,
     recipeName,
     stepLabel,
     recipeIngredients,
+    mode,
   );
-  const [muted, setMuted] = useState(false);
+  /** Mode push tidak memakai mute: mikrofon mati kecuali tombol ditahan. */
+  const muted = false;
   /** Tahapan menunggu jawaban (teks bergantian) — lihat VOICE_LOADING_STAGES. */
   const thinkingLabel = useRotatingStage(state === 'thinking', VOICE_LOADING_STAGES);
 
+  /** Sedang merekam (tombol ditahan). */
+  const recording = state === 'listening';
+  /** Chef sedang menyusun atau membacakan jawaban — tombol ditahan mati. */
+  const busy = state === 'thinking' || state === 'speaking';
+
   useEffect(() => {
     if (!visible) return;
-    setMuted(false);
     startCall();
     return () => {
       stopCall();
@@ -56,12 +69,6 @@ export function VoiceCallModal({
   const close = () => {
     stopCall();
     onClose();
-  };
-
-  const toggleMute = () => {
-    if (muted) startCall();
-    else stopCall({ keepHistory: true });
-    setMuted((value) => !value);
   };
 
   const status = muted
@@ -142,14 +149,14 @@ export function VoiceCallModal({
             {muted
               ? 'Mikrofon mati. Tekan tombol mikrofon untuk bicara lagi.'
               : state === 'listening'
-                ? 'Bicara langsung, lalu berhenti sejenak. Chef AI menjawab dengan suara.'
+                ? 'Sedang merekam. Lepas tombol kalau pertanyaanmu sudah selesai.'
                 : state === 'thinking'
                   ? 'Tunggu sebentar, jawaban sedang disusun.'
                   : state === 'speaking'
-                    ? 'Chef AI sedang berbicara. Tunggu sampai selesai, lalu bicara lagi.'
+                    ? 'Chef AI sedang berbicara. Tunggu sampai selesai.'
                     : state === 'error'
                       ? 'Tekan Coba lagi, atau tutup untuk pindah ke mode Chat.'
-                      : 'Menyiapkan mikrofon dan suara.'}
+                      : 'Tekan dan tahan tombol di bawah untuk bicara.'}
           </Text>
 
           {state === 'error' ? (
@@ -163,14 +170,32 @@ export function VoiceCallModal({
         </ScrollView>
 
         <View style={styles.controls}>
+          {/*
+            TOMBOL TEKAN-DAN-TAHAN (push to talk).
+            Mikrofon hanya menyala selama tombol ini ditahan, jadi perangkat dengan
+            deteksi suara terlalu lebar tidak lagi merekam sendiri. `onPressOut`
+            juga terpanggil bila jari bergeser keluar tombol, sehingga rekaman
+            tidak pernah tertinggal menyala.
+          */}
           <Pressable
-            accessibilityRole="switch"
-            accessibilityState={{ checked: muted }}
-            accessibilityLabel={muted ? 'Aktifkan mikrofon' : 'Matikan mikrofon'}
-            onPress={toggleMute}
-            style={[styles.controlButton, muted && styles.controlSelected]}
+            accessibilityRole="button"
+            accessibilityLabel="Tekan dan tahan untuk bicara"
+            accessibilityHint="Lepas tombol untuk mengirim pertanyaan"
+            accessibilityState={{ disabled: busy, selected: recording }}
+            disabled={busy || muted}
+            onPressIn={pressStart}
+            onPressOut={pressEnd}
+            style={[
+              styles.talkButton,
+              recording && styles.talkButtonActive,
+              (busy || muted) && styles.talkButtonDisabled,
+            ]}
           >
-            <MaterialIcons name={muted ? 'mic-off' : 'mic'} size={25} color={colors.text} />
+            <MaterialIcons
+              name={recording ? 'graphic-eq' : 'mic'}
+              size={26}
+              color={recording ? colors.white : colors.text}
+            />
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -265,6 +290,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xl,
   },
+  talkButton: {
+    flex: 1,
+    height: 56,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  talkButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  talkButtonDisabled: { opacity: 0.42 },
   controlButton: {
     width: 58,
     height: 58,

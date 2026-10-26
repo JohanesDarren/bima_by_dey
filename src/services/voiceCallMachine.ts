@@ -19,10 +19,33 @@ import { HISTORY_LIMIT } from '../prompts/chefPrompt';
  * sebuah port. Karena itu seluruh urutannya bisa diuji tanpa perangkat bersuara.
  */
 
-export type VoiceCallPhase = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+export type VoiceCallPhase =
+  | 'idle'
+  /** Hanya pada mode push: mikrofon siap, menunggu tombol ditekan. */
+  | 'ready'
+  | 'listening'
+  | 'thinking'
+  | 'speaking'
+  | 'error';
+
+/**
+ * Cara mikrofon dikendalikan.
+ *
+ * - `auto` (bawaan): mikrofon menyala terus dan berganti sendiri setelah Chef
+ *   selesai bicara. Nyaman di perangkat dengan deteksi suara yang wajar.
+ * - `push`: mikrofon HANYA menyala selama tombol ditekan.
+ *
+ * Mode push ada karena deteksi suara otomatis bergantung pada perangkat: sebagian
+ * HP punya ambang sangat lebar sehingga mikrofon terus menangkap suara latar
+ * walau pengguna diam, dan panggilan jadi berputar tanpa pernah benar-benar
+ * menunggu pertanyaan. Dengan push, pengguna yang menentukan kapan bicara.
+ */
+export type VoiceCallMode = 'auto' | 'push';
 
 export interface VoiceCallState {
   phase: VoiceCallPhase;
+  /** Cara mikrofon dikendalikan pada panggilan ini. */
+  mode: VoiceCallMode;
   /** Pesan galat untuk ditampilkan saat `phase === 'error'`. */
   errorMsg: string | null;
   /** Panggilan sedang berjalan (dari `start` sampai `stop`). */
@@ -42,6 +65,10 @@ export type MicPrepareOutcome = 'ready' | 'unavailable' | 'denied';
 
 export type VoiceCallEvent =
   | { type: 'start' }
+  /** Mode push: pengguna MENEKAN tombol, mikrofon mulai merekam. */
+  | { type: 'press-start'; generation: number }
+  /** Mode push: pengguna MELEPAS tombol, rekaman diakhiri dan diproses. */
+  | { type: 'press-end'; generation: number }
   /** `keepHistory`: tombol MATIKAN MIKROFON — mute lalu nyalakan lagi tidak boleh menghapus memori. */
   | { type: 'stop'; keepHistory?: boolean }
   | { type: 'mic-prepared'; generation: number; outcome: MicPrepareOutcome }
@@ -82,9 +109,10 @@ const BENIGN_MIC_ERRORS = new Set(['aborted', 'speech-timeout', 'no-speech']);
 export const MIC_UNAVAILABLE_MESSAGE = 'Fitur suara tidak tersedia di perangkat ini.';
 export const MIC_DENIED_MESSAGE = 'Izin mikrofon ditolak. Aktifkan izin mikrofon di pengaturan HP.';
 
-export function initialVoiceCallState(): VoiceCallState {
+export function initialVoiceCallState(mode: VoiceCallMode = 'auto'): VoiceCallState {
   return {
     phase: 'idle',
+    mode,
     errorMsg: null,
     active: false,
     processing: false,
@@ -149,10 +177,36 @@ export function reduceVoiceCall(state: VoiceCallState, event: VoiceCallEvent): V
       if (!isLive(state, event.generation)) return unchanged(state);
       if (event.outcome === 'unavailable') return fail(state, MIC_UNAVAILABLE_MESSAGE);
       if (event.outcome === 'denied') return fail(state, MIC_DENIED_MESSAGE);
+      // Mode push: mikrofon TIDAK dinyalakan sampai tombol ditekan.
+      if (state.mode === 'push') {
+        return {
+          state: { ...state, phase: 'ready', errorMsg: null },
+          effects: [],
+        };
+      }
       return {
         state: { ...state, phase: 'listening', errorMsg: null },
         effects: [{ type: 'start-mic', generation: event.generation }],
       };
+    }
+
+    case 'press-start': {
+      if (!isLive(state, event.generation) || state.mode !== 'push') return unchanged(state);
+      // Hanya boleh mulai dari keadaan siap atau galat; jangan memotong giliran
+      // yang sedang berpikir atau sedang dibacakan.
+      if (state.phase !== 'ready' && state.phase !== 'error') return unchanged(state);
+      return {
+        state: { ...state, phase: 'listening', errorMsg: null, processing: false },
+        effects: [{ type: 'start-mic', generation: event.generation }],
+      };
+    }
+
+    case 'press-end': {
+      if (!isLive(state, event.generation) || state.mode !== 'push') return unchanged(state);
+      if (state.phase !== 'listening') return unchanged(state);
+      // Rekaman diakhiri. Pendengar mengirim hasil finalnya lewat `heard`, yang
+      // lalu menjalankan giliran percakapan seperti biasa.
+      return { state, effects: [{ type: 'finish-mic' }] };
     }
 
     case 'mic-start-failed':
@@ -182,6 +236,12 @@ export function reduceVoiceCall(state: VoiceCallState, event: VoiceCallEvent): V
 
     case 'mic-ended':
       if (!isLive(state, event.generation)) return unchanged(state);
+      // Mode push: mikrofon berhenti karena tombol dilepas (atau perangkat
+      // menghentikannya sendiri). JANGAN menyalakannya lagi — inilah yang membuat
+      // HP berambang lebar merekam terus tanpa pengguna bicara.
+      if (state.mode === 'push') {
+        return { state: { ...state, phase: state.processing ? 'thinking' : 'ready' }, effects: [] };
+      }
       return {
         state,
         effects: [
@@ -191,6 +251,7 @@ export function reduceVoiceCall(state: VoiceCallState, event: VoiceCallEvent): V
 
     case 'restart-due':
       if (!isLive(state, event.generation) || state.processing) return unchanged(state);
+      if (state.mode === 'push') return unchanged(state);
       return { state, effects: [{ type: 'prepare-mic', generation: event.generation }] };
 
     case 'turn-settled': {
@@ -218,6 +279,10 @@ export function reduceVoiceCall(state: VoiceCallState, event: VoiceCallEvent): V
 
     case 'spoken':
       if (!isLive(state, event.generation)) return unchanged(state);
+      // Mode push: setelah Chef selesai bicara, kembali menunggu tombol ditekan.
+      if (state.mode === 'push') {
+        return { state: { ...state, processing: false, phase: 'ready' }, effects: [] };
+      }
       return {
         state: { ...state, processing: false },
         effects: [{ type: 'prepare-mic', generation: event.generation }],

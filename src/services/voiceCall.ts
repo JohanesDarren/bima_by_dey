@@ -8,6 +8,7 @@ import type {
   MicPrepareOutcome,
   VoiceCallEffect,
   VoiceCallEvent,
+  VoiceCallMode,
   VoiceCallState,
 } from './voiceCallMachine';
 
@@ -66,6 +67,8 @@ export interface VoiceCallDeps {
   schedule?: (fn: () => void, delayMs: number) => () => void;
   /** Catatan teknis (bukan untuk pengguna). Bawaan: console.warn. */
   warn?: (message: string, error?: unknown) => void;
+  /** Cara mikrofon dikendalikan. Bawaan: 'auto' (mikrofon menyala terus). */
+  mode?: VoiceCallMode;
 }
 
 export interface VoiceCall {
@@ -74,6 +77,10 @@ export interface VoiceCall {
   subscribe(listener: () => void): () => void;
   /** Mulai (atau mulai ulang) panggilan: nyalakan mikrofon. */
   start(): void;
+  /** Mode push: tombol DITEKAN — mulai merekam. Diabaikan pada mode auto. */
+  pressStart(): void;
+  /** Mode push: tombol DILEPAS — akhiri rekaman dan proses pertanyaannya. */
+  pressEnd(): void;
   /**
    * Akhiri panggilan. `keepHistory` dipakai tombol MATIKAN MIKROFON: mute lalu
    * nyalakan lagi tidak boleh menghapus memori percakapan.
@@ -115,7 +122,7 @@ export function createVoiceCall(deps: VoiceCallDeps): VoiceCall {
   const schedule = deps.schedule ?? defaultSchedule;
   const warn = deps.warn ?? ((message, error) => console.warn(message, error));
 
-  let state = initialVoiceCallState();
+  let state = initialVoiceCallState(deps.mode ?? 'auto');
   let turn: { close: () => void } | null = null;
   let cancelRestart: (() => void) | null = null;
   const listeners = new Set<() => void>();
@@ -243,6 +250,8 @@ export function createVoiceCall(deps: VoiceCallDeps): VoiceCall {
       return () => listeners.delete(listener);
     },
     start: () => dispatch({ type: 'start' }),
+    pressStart: () => dispatch({ type: 'press-start', generation: state.generation }),
+    pressEnd: () => dispatch({ type: 'press-end', generation: state.generation }),
     stop: (options) => dispatch({ type: 'stop', keepHistory: options?.keepHistory }),
     // Sengaja tak mematikan controller selamanya: React StrictMode (dev) menjalankan
     // cleanup lalu memasang ulang efek pada instance yang sama.
