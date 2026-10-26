@@ -193,14 +193,20 @@ const COOK = {
 };
 
 test('cookingContext: konteks chat per langkah', () => {
-  assert.equal(
-    buildCookingChatContext(COOK, 1),
-    'Saya sedang memasak "Bubur Sorgum". Bahan resep ini: sorgum, santan. Langkah 2/2: Rebus. Rebus 20 menit. Bantu & temani saya selama proses masak, jawab pertanyaan saat saya ragu.',
-  );
-  assert.equal(
-    buildCookingChatContext({ ...COOK, ingredients: [] }, 5),
-    'Saya sedang memasak "Bubur Sorgum". Bahan resep ini: belum tercatat. Temani & bantu saya.',
-  );
+  const ctx = buildCookingChatContext(COOK, 1);
+  // Bahan ditandai sebagai bahan SELURUH resep: dulu model mencampurnya ke langkah
+  // yang ditanya sehingga "rebus beras sorgum" dijawab "rebus dada ayam".
+  assert.match(ctx, /Bahan seluruh resep \(bukan bahan satu langkah tertentu\): sorgum, santan\./);
+  // Semua langkah dikirim bernomor supaya "langkah nomor N" bisa dijawab.
+  assert.match(ctx, /Daftar langkah:\n1\. Rendam\. Rendam semalam\n2\. Rebus\. Rebus 20 menit/);
+  assert.match(ctx, /<-- SEDANG DIKERJAKAN/);
+  // Langkah aktif dikutip apa adanya.
+  assert.match(ctx, /Isi langkah aktif \(KUTIPAN RESEP[^)]*\): "Rebus\. Rebus 20 menit"/);
+
+  const noStep = buildCookingChatContext({ ...COOK, ingredients: [] }, 5);
+  assert.match(noStep, /Bahan seluruh resep[^:]*: belum tercatat\./);
+  assert.match(noStep, /Temani & bantu saya\./);
+  assert.doesNotMatch(noStep, /SEDANG DIKERJAKAN/);
 });
 
 test('cookingContext: label langkah suara & daftar bahan', () => {

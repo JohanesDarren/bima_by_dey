@@ -19,6 +19,7 @@ import { saveCookHistory } from '../services/history';
 import {
   buildCookingChatContext,
   buildCookingStepLabel,
+  buildCookingStepsDigest,
   ingredientList,
 } from '../prompts/cookingContext';
 
@@ -182,6 +183,7 @@ export function CookingScreen({ navigation, route }: Props) {
           recipeName={recipe.name}
           stepLabel={buildCookingStepLabel(recipe, stepIdx)}
           recipeIngredients={ingredientList(recipe) ?? undefined}
+          stepsDigest={buildCookingStepsDigest(recipe, stepIdx)}
         />
       ) : null}
 

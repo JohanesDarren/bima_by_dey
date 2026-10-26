@@ -66,6 +66,17 @@ export const VOICE_RULES = [
   'Tanpa pembuka, pengulangan pertanyaan, daftar, markdown, emoji, simbol dekoratif, atau penutup basa-basi.',
   'Bulatkan angka dan tulis dengan kata; hindari simbol yang janggal diucapkan mesin suara seperti %, /, dan ±.',
   'Jika RAG tidak mendukung jawaban, katakan singkat dan jujur.',
+  // Penjaga khusus pertanyaan tentang langkah: pengguna sering menyebut nomor
+  // langkah, dan tanpa aturan ini model mencampur bahan dari daftar bahan resep
+  // ke langkah yang ditanyakan.
+  'Kalau pertanyaan menyebut nomor langkah, jawab dari daftar langkah yang diberikan, bukan dari langkah lain.',
+  'Sebut bahan persis seperti pada langkah yang ditanyakan. JANGAN menggantinya dengan bahan lain dari daftar bahan resep.',
+  'Kalau langkah yang ditanyakan tidak ada di daftar, katakan tidak ada dan sebutkan jumlah langkahnya.',
+  // Tanpa ini model menyalin dokumen basis pengetahuan ("Konsep Produk", tabel
+  // bahan) sebagai jawaban — jawabannya jadi panjang dan tidak menjawab pertanyaan.
+  'JANGAN menyalin dokumen, menulis judul seperti "Konsep Produk", atau membuat tabel bahan.',
+  'DILARANG menulis daftar bahan atau menulis ulang seluruh langkah. Jawab hanya langkah yang ditanya.',
+  'Awali langsung dengan tindakannya, misal "Rebus beras sorgum dua puluh menit".',
   // Penjaga anti-mengarang dari versi upstream yang lebih baru (RAG_ANSWER_GUARD) —
   // sama seperti blok chat: klausa "jangan menebak substitusi" sengaja tidak diambil.
   'Gunakan hanya fakta yang tersedia dalam konteks resep dan hasil RAG.',

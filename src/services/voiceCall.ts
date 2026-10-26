@@ -56,6 +56,8 @@ export interface VoiceCallContext {
   recipeName?: string;
   stepLabel?: string;
   recipeIngredients?: string;
+  /** Daftar SEMUA langkah bernomor; dipakai menjawab "langkah nomor N apa?". */
+  stepsDigest?: string;
 }
 
 export interface VoiceCallDeps {
@@ -105,8 +107,14 @@ function buildPrompt(context: VoiceCallContext, question: string): string {
   return [
     VOICE_PERSONA,
     `Resep: ${context.recipeName || 'belum dipilih'}.`,
-    `Langkah aktif: ${context.stepLabel || 'tidak ada'}.`,
-    `Bahan resep ini: ${context.recipeIngredients || 'belum tercatat'}.`,
+    `Bahan seluruh resep (bukan bahan satu langkah tertentu): ${context.recipeIngredients || 'belum tercatat'}.`,
+    // Semua langkah dikirim bernomor: pengguna sering menyebut nomor langkah, dan
+    // tanpa daftar ini jawaban hanya bisa diambil dari langkah yang sedang terbuka.
+    context.stepsDigest ? `Daftar langkah:\n${context.stepsDigest}` : '',
+    // Dikutip dan ditandai tegas supaya model tidak mengganti bahannya dengan bahan
+    // lain dari daftar di atas (penyebab jawaban "rebus dada ayam" untuk langkah
+    // yang sebenarnya berbunyi "rebus beras sorgum").
+    `Isi langkah aktif (KUTIPAN RESEP, jangan diubah atau diganti bahannya): "${context.stepLabel || 'tidak ada'}"`,
     `Profil: ${context.segment.ageGroup || 'umum'}, ${context.segment.condition || 'umum'}.`,
     // Aturan dasar versi upstream apa adanya + tambahan kita, disimpan di
     // chefPrompt.ts supaya bentuk jawaban Chef dan suara tidak berkelahi.

@@ -25,6 +25,8 @@ interface Props {
   stepLabel?: string;
   /** Daftar bahan resep yang sedang dimasak — dipakai menjawab pertanyaan pengganti bahan. */
   recipeIngredients?: string;
+  /** Semua langkah bernomor, agar "langkah nomor N" bisa dijawab. */
+  stepsDigest?: string;
 }
 
 export function VoiceCallModal({
@@ -34,6 +36,7 @@ export function VoiceCallModal({
   recipeName,
   stepLabel,
   recipeIngredients,
+  stepsDigest,
 }: Props) {
   /**
    * Mode panggilan. `push` dipakai secara bawaan karena deteksi suara otomatis
@@ -47,6 +50,7 @@ export function VoiceCallModal({
     stepLabel,
     recipeIngredients,
     mode,
+    stepsDigest,
   );
   /** Mode push tidak memakai mute: mikrofon mati kecuali tombol ditahan. */
   const muted = false;

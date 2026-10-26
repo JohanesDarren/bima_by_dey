@@ -22,12 +22,19 @@ export function useVoiceCall(
   stepLabel?: string,
   recipeIngredients?: string,
   mode: VoiceCallMode = 'auto',
+  stepsDigest?: string,
 ) {
   // Konteks yang berubah antar render dibaca lewat ref, jadi panggilan tak perlu dibuat ulang.
-  const latest = useRef<VoiceCallContext>({ segment, recipeName, stepLabel, recipeIngredients });
+  const latest = useRef<VoiceCallContext>({
+    segment,
+    recipeName,
+    stepLabel,
+    recipeIngredients,
+    stepsDigest,
+  });
   useEffect(() => {
-    latest.current = { segment, recipeName, stepLabel, recipeIngredients };
-  }, [segment, recipeName, stepLabel, recipeIngredients]);
+    latest.current = { segment, recipeName, stepLabel, recipeIngredients, stepsDigest };
+  }, [segment, recipeName, stepLabel, recipeIngredients, stepsDigest]);
 
   // Mode dibaca sekali saat panggilan dibuat: mengganti mode di tengah panggilan
   // akan membuat state mikrofon dan state machine tidak sinkron. Pemanggil

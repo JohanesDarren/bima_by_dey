@@ -512,8 +512,9 @@ test('controller: kalimat final → giliran dijalankan dengan prompt berisi kont
   assert.equal(turn.request.question, 'berapa lama?');
   assert.equal(turn.request.maxTokens, 150);
   assert.match(turn.request.prompt, /Resep: Nasi Goreng\./);
-  assert.match(turn.request.prompt, /Langkah aktif: Tumis bawang\./);
-  assert.match(turn.request.prompt, /Bahan resep ini: nasi, bawang\./);
+  // Langkah aktif kini DIKUTIP dan ditandai, bukan sekadar ditempel.
+  assert.match(turn.request.prompt, /Isi langkah aktif \(KUTIPAN RESEP[^)]*\): "Tumis bawang"/);
+  assert.match(turn.request.prompt, /Bahan seluruh resep[^:]*: nasi, bawang\./);
   assert.match(turn.request.prompt, /dewasa, umum/);
   assert.ok(turn.request.prompt.endsWith('Pertanyaan: berapa lama?'));
 
