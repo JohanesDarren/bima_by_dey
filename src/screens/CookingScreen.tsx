@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -8,7 +15,7 @@ import { AICompanion } from '../components/AICompanion';
 import { StepTimerCard } from '../components/StepTimerCard';
 import { VoicePane } from '../components/VoicePane';
 import { RecipeCompleteChecklist } from '../components/RecipeCompleteChecklist';
-import { useKeyboardVisible } from '../hooks/useKeyboardVisible';
+import { useKeyboardInset, useKeyboardVisible } from '../hooks/useKeyboardVisible';
 import { useStepTimer } from '../hooks/useStepTimer';
 import { useAuthStore } from '../store/authStore';
 import { useFlowStore } from '../store/flowStore';
@@ -42,6 +49,15 @@ export function CookingScreen({ navigation, route }: Props) {
   const [stepIdx, setStepIdx] = useState(0);
   /** Mode tampilan: obrolan teks atau karakter suara (bukan modal layar penuh). */
   const [mode, setMode] = useState<'chat' | 'voice'>('chat');
+  /** Tinggi keyboard: edge-to-edge membuat adjustResize tidak bekerja. */
+  const keyboardInset = useKeyboardInset();
+  const { height: windowHeight } = useWindowDimensions();
+  /**
+   * Tinggi maksimum wadah chat. Tanpa batas, daftar pesan yang `flex:1` di dalam
+   * induk tanpa tinggi akan menciut jadi nol. Batas ini juga menyisakan ruang
+   * untuk kartu langkah di atasnya.
+   */
+  const dockMaxHeight = Math.max(240, (windowHeight - keyboardInset) * 0.8);
   /** Checklist penyelesaian tampil → animasi jalan → kembali ke beranda. */
   const [completing, setCompleting] = useState(false);
   const [notes, setNotes] = useState<string[]>([]);
@@ -169,23 +185,37 @@ export function CookingScreen({ navigation, route }: Props) {
           </View>
         ) : null}
 
-        {/* AI menemani — obrolan teks (disembunyikan saat mode suara aktif) */}
-        <View style={mode === 'chat' ? styles.flex : styles.hidden}>
-          <AICompanion
-            context={buildCookingChatContext(recipe, stepIdx)}
-            recipeName={recipe.name}
-            recipeMeta={`Langkah ${stepIdx + 1} dari ${steps.length}`}
-            simple
-            placeholder={`Tanya soal langkah ${stepIdx + 1} / tanya bahan…`}
-            // Hanya catatan terakhir yang disimpan ke riwayat — jangan menumpuk di memori.
-            onAssistantMessage={(t) => setNotes((n) => [...n, t].slice(-MAX_NOTES))}
-          />
-        </View>
-
         {isGuest && !keyboardUp ? (
           <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text>
         ) : null}
       </ScrollView>
+
+      {/*
+        Panel chat DIPINDAH KE LUAR ScrollView.
+        Sebelumnya ia berada di dalam ScrollView, sehingga kolom tulisnya bisa
+        tergulir ke bawah keyboard dan tidak terlihat sama sekali. Di luar
+        ScrollView, panel ini menempel di dasar layar, dan `paddingBottom` sebesar
+        tinggi keyboard membuatnya selalu berada TEPAT DI ATAS keyboard — di HP
+        edge-to-edge sekalipun, karena tinggi keyboard dibaca langsung dari
+        peristiwa native.
+      */}
+      <View
+        style={[
+          styles.chatDock,
+          mode === 'chat' ? null : styles.hidden,
+          { maxHeight: dockMaxHeight, paddingBottom: keyboardInset },
+        ]}
+      >
+        <AICompanion
+          context={buildCookingChatContext(recipe, stepIdx)}
+          recipeName={recipe.name}
+          recipeMeta={`Langkah ${stepIdx + 1} dari ${steps.length}`}
+          simple
+          placeholder={`Tanya soal langkah ${stepIdx + 1} / tanya bahan…`}
+          // Hanya catatan terakhir yang disimpan ke riwayat — jangan menumpuk di memori.
+          onAssistantMessage={(t) => setNotes((n) => [...n, t].slice(-MAX_NOTES))}
+        />
+      </View>
 
       {/* Mode suara tampil sebaris di halaman ini, bukan modal layar penuh. */}
       {mode === 'voice' ? (
@@ -260,6 +290,12 @@ const styles = StyleSheet.create({
   stepNumBigText: { color: colors.textOnPrimary, fontSize: 18, fontWeight: '800' },
   stepTitle: { ...typography.h3, color: colors.text, flex: 1 },
   stepInstr: { ...typography.body, color: colors.text, marginTop: spacing.md, lineHeight: 24 },
+  /** Wadah panel chat: menempel di dasar layar, di luar ScrollView. */
+  chatDock: {
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
   modeBtn: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,

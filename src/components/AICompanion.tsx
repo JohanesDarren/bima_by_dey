@@ -1,14 +1,5 @@
 import React, { useRef } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography } from '../theme';
 import { CHAT_LOADING_STAGES } from '../utils/assistantText';
@@ -76,10 +67,13 @@ export function AICompanion({
   });
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    /*
+     * Tanpa KeyboardAvoidingView: layar pemanggil (CookingScreen) sudah memberi
+     * padding sebesar tinggi keyboard lewat `useKeyboardInset`, karena mode
+     * edge-to-edge membuat adjustResize tidak bekerja. Menambah penghindar kedua
+     * di sini akan menggeser kolom tulis dua kali.
+     */
+    <View style={styles.flex}>
       <View style={styles.flex}>
         {/* Kepala obrolan bergaya messenger. */}
         <View style={styles.chatHeader}>
@@ -258,7 +252,7 @@ export function AICompanion({
           </Text>
         ) : null}
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
