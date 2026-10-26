@@ -57,7 +57,12 @@ export function CookingScreen({ navigation, route }: Props) {
    * induk tanpa tinggi akan menciut jadi nol. Batas ini juga menyisakan ruang
    * untuk kartu langkah di atasnya.
    */
-  const dockMaxHeight = Math.max(240, (windowHeight - keyboardInset) * 0.8);
+  /**
+   * Tinggi panel chat. Harus NILAI TETAP, bukan hanya maxHeight: di dalamnya
+   * daftar pesan memakai `flex:1`, dan `flex:1` di dalam induk tanpa tinggi pasti
+   * akan menciut jadi nol — itulah yang membuat panel chat hilang sama sekali.
+   */
+  const dockHeight = Math.max(240, Math.min(380, (windowHeight - keyboardInset) * 0.52));
   /** Checklist penyelesaian tampil → animasi jalan → kembali ke beranda. */
   const [completing, setCompleting] = useState(false);
   const [notes, setNotes] = useState<string[]>([]);
@@ -136,61 +141,102 @@ export function CookingScreen({ navigation, route }: Props) {
         </View>
       </View>
 
-      <ScrollView
-        ref={scrollRef}
-        style={styles.flex}
-        scrollEnabled={!keyboardUp}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[styles.content, keyboardUp && styles.contentKeyboard]}
-      >
-        {/* Step aktif */}
-        {step && !keyboardUp ? (
-          <View style={[styles.stepCard, elevation.sm]}>
-            <View style={styles.stepHeader}>
-              <View style={styles.stepNumBig}>
-                <Text style={styles.stepNumBigText}>{step.order}</Text>
-              </View>
-              <Text style={styles.stepTitle}>{step.title}</Text>
-            </View>
-            <Text style={styles.stepInstr}>{step.instruction}</Text>
-
-            {timer.secondsLeft !== null ? (
-              <StepTimerCard
-                secondsLeft={timer.secondsLeft}
-                running={timer.running}
-                durationMinutes={step.durationMinutes}
-                onToggle={timer.toggle}
-                onRestart={timer.restart}
-              />
-            ) : null}
-
-            {/* Aksi: ganti mode + lanjut langkah */}
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel={mode === 'chat' ? 'Ganti ke mode suara' : 'Ganti ke mode chat'}
-                onPress={() => setMode((current) => (current === 'chat' ? 'voice' : 'chat'))}
-                style={styles.modeBtn}
-              >
-                <Text style={styles.modeBtnText}>
-                  {mode === 'chat' ? 'Mode Suara' : 'Mode Chat'}
-                </Text>
-              </TouchableOpacity>
-              <Button
-                title={isLast ? 'Selesai' : 'Selesai — Lanjut'}
-                onPress={goNext}
-                style={styles.nextBtn}
-              />
-            </View>
-          </View>
-        ) : null}
-
-        {isGuest && !keyboardUp ? (
-          <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text>
-        ) : null}
-      </ScrollView>
+      {/*
+        PEMILIH MODE — selalu terlihat.
+        Sebelumnya tombol ini berada di dalam kartu langkah, yang bisa tergulir
+        keluar layar; di mode suara tombolnya hilang sama sekali sehingga pengguna
+        tidak bisa kembali ke mode chat. Sekarang letaknya tetap di bawah header.
+      */}
+      <View style={styles.modeBar}>
+        <TouchableOpacity
+          accessibilityRole="tab"
+          accessibilityState={{ selected: mode === 'chat' }}
+          accessibilityLabel="Mode chat"
+          onPress={() => setMode('chat')}
+          style={[styles.modeTab, mode === 'chat' && styles.modeTabActive]}
+        >
+          <MaterialIcons
+            name="chat-bubble-outline"
+            size={15}
+            color={mode === 'chat' ? colors.textOnPrimary : colors.primary}
+          />
+          <Text style={[styles.modeTabText, mode === 'chat' && styles.modeTabTextActive]}>
+            Chat
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="tab"
+          accessibilityState={{ selected: mode === 'voice' }}
+          accessibilityLabel="Mode suara"
+          onPress={() => setMode('voice')}
+          style={[styles.modeTab, mode === 'voice' && styles.modeTabActive]}
+        >
+          <MaterialIcons
+            name="mic"
+            size={15}
+            color={mode === 'voice' ? colors.textOnPrimary : colors.primary}
+          />
+          <Text style={[styles.modeTabText, mode === 'voice' && styles.modeTabTextActive]}>
+            Suara
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/*
+        AREA ISI: `flex:1` dan boleh menyusut. ScrollView di dalamnya memakai
+        `flexShrink:1` supaya kartu langkah MENGALAH ke panel chat / karakter suara,
+        bukan mendorongnya keluar layar.
+      */}
+      <View style={styles.contentArea}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.stepScroll}
+          scrollEnabled={!keyboardUp}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[styles.content, keyboardUp && styles.contentKeyboard]}
+        >
+          {/* Step aktif */}
+          {step && !keyboardUp ? (
+            <View style={[styles.stepCard, elevation.sm]}>
+              <View style={styles.stepHeader}>
+                <View style={styles.stepNumBig}>
+                  <Text style={styles.stepNumBigText}>{step.order}</Text>
+                </View>
+                <Text style={styles.stepTitle}>{step.title}</Text>
+              </View>
+              <Text style={styles.stepInstr}>{step.instruction}</Text>
+
+              {timer.secondsLeft !== null ? (
+                <StepTimerCard
+                  secondsLeft={timer.secondsLeft}
+                  running={timer.running}
+                  durationMinutes={step.durationMinutes}
+                  onToggle={timer.toggle}
+                  onRestart={timer.restart}
+                />
+              ) : null}
+
+              {/*
+                Hanya tombol lanjut. Pemilih mode sudah dipindah ke bilah tetap di
+                bawah header — dulu di sini, sehingga ikut tergulir hilang dan
+                pengguna tidak bisa kembali dari mode suara ke mode chat.
+              */}
+              <View style={styles.actionRow}>
+                <Button
+                  title={isLast ? 'Selesai' : 'Selesai — Lanjut'}
+                  onPress={goNext}
+                  style={styles.nextBtn}
+                />
+              </View>
+            </View>
+          ) : null}
+
+          {isGuest && !keyboardUp ? (
+            <Text style={styles.guestNote}>Mode tamu — progres disimpan lokal.</Text>
+          ) : null}
+        </ScrollView>
+
+        {/*
         Panel chat DIPINDAH KE LUAR ScrollView.
         Sebelumnya ia berada di dalam ScrollView, sehingga kolom tulisnya bisa
         tergulir ke bawah keyboard dan tidak terlihat sama sekali. Di luar
@@ -199,34 +245,35 @@ export function CookingScreen({ navigation, route }: Props) {
         edge-to-edge sekalipun, karena tinggi keyboard dibaca langsung dari
         peristiwa native.
       */}
-      <View
-        style={[
-          styles.chatDock,
-          mode === 'chat' ? null : styles.hidden,
-          { maxHeight: dockMaxHeight, paddingBottom: keyboardInset },
-        ]}
-      >
-        <AICompanion
-          context={buildCookingChatContext(recipe, stepIdx)}
-          recipeName={recipe.name}
-          recipeMeta={`Langkah ${stepIdx + 1} dari ${steps.length}`}
-          simple
-          placeholder={`Tanya soal langkah ${stepIdx + 1} / tanya bahan…`}
-          // Hanya catatan terakhir yang disimpan ke riwayat — jangan menumpuk di memori.
-          onAssistantMessage={(t) => setNotes((n) => [...n, t].slice(-MAX_NOTES))}
-        />
-      </View>
+        <View
+          style={[
+            styles.chatDock,
+            mode === 'chat' ? null : styles.hidden,
+            { height: dockHeight, paddingBottom: keyboardInset },
+          ]}
+        >
+          <AICompanion
+            context={buildCookingChatContext(recipe, stepIdx)}
+            recipeName={recipe.name}
+            recipeMeta={`Langkah ${stepIdx + 1} dari ${steps.length}`}
+            simple
+            placeholder={`Tanya soal langkah ${stepIdx + 1} / tanya bahan…`}
+            // Hanya catatan terakhir yang disimpan ke riwayat — jangan menumpuk di memori.
+            onAssistantMessage={(t) => setNotes((n) => [...n, t].slice(-MAX_NOTES))}
+          />
+        </View>
 
-      {/* Mode suara tampil sebaris di halaman ini, bukan modal layar penuh. */}
-      {mode === 'voice' ? (
-        <VoicePane
-          segment={segment}
-          recipeName={recipe.name}
-          stepLabel={buildCookingStepLabel(recipe, stepIdx)}
-          recipeIngredients={ingredientList(recipe) ?? undefined}
-          stepsDigest={buildCookingStepsDigest(recipe, stepIdx)}
-        />
-      ) : null}
+        {/* Mode suara tampil sebaris di halaman ini, bukan modal layar penuh. */}
+        {mode === 'voice' ? (
+          <VoicePane
+            segment={segment}
+            recipeName={recipe.name}
+            stepLabel={buildCookingStepLabel(recipe, stepIdx)}
+            recipeIngredients={ingredientList(recipe) ?? undefined}
+            stepsDigest={buildCookingStepsDigest(recipe, stepIdx)}
+          />
+        ) : null}
+      </View>
 
       {/*
         Checklist penyelesaian. Setelah animasi selesai, kembali ke beranda
@@ -290,22 +337,41 @@ const styles = StyleSheet.create({
   stepNumBigText: { color: colors.textOnPrimary, fontSize: 18, fontWeight: '800' },
   stepTitle: { ...typography.h3, color: colors.text, flex: 1 },
   stepInstr: { ...typography.body, color: colors.text, marginTop: spacing.md, lineHeight: 24 },
+  /** Pemilih mode: selalu terlihat, tidak ikut tergulir. */
+  modeBar: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 36,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+  },
+  modeTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  modeTabText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
+  modeTabTextActive: { color: colors.textOnPrimary },
+  /** Area isi: kartu langkah + panel chat/karakter suara. */
+  contentArea: { flex: 1 },
+  /** Kartu langkah MENGALAH ke panel chat, bukan mendorongnya keluar layar. */
+  stepScroll: { flexShrink: 1 },
   /** Wadah panel chat: menempel di dasar layar, di luar ScrollView. */
   chatDock: {
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  modeBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.surface,
-    marginRight: spacing.sm,
-  },
-  modeBtnText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
   hidden: { display: 'none' },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
   nextBtn: { flex: 1 },

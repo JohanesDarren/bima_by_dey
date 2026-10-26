@@ -59,12 +59,6 @@ test('tinggi keyboard dibaca dari peristiwa native', () => {
   );
 });
 
-test('wadah chat punya batas tinggi agar daftar pesan tidak menciut', () => {
-  // flex:1 di dalam induk tanpa tinggi akan menciut jadi nol — daftar pesan hilang.
-  assert.match(cooking, /dockMaxHeight/, 'chatDock butuh maxHeight');
-  assert.match(cooking, /maxHeight:\s*dockMaxHeight/, 'maxHeight harus dipakai di style');
-});
-
 test('tidak ada penghindar keyboard ganda di dalam panel', () => {
   // CookingScreen sudah memberi padding; KeyboardAvoidingView di dalamnya akan
   // menggeser kolom tulis dua kali sehingga justru terdorong keluar layar.
@@ -74,4 +68,30 @@ test('tidak ada penghindar keyboard ganda di dalam panel', () => {
     /<KeyboardAvoidingView/,
     'AICompanion tidak boleh memasang KeyboardAvoidingView sendiri',
   );
+});
+
+test('pemilih mode SELALU terlihat, tidak di dalam kartu langkah', () => {
+  // Regresi nyata: tombol mode berada di dalam kartu langkah yang bisa tergulir
+  // keluar layar. Di mode suara tombolnya hilang, jadi pengguna tidak bisa
+  // kembali ke mode chat sama sekali.
+  // '<ScrollView' saja akan cocok dengan useRef<ScrollView> di atas; cari tag JSX-nya.
+  const scrollStart = cooking.indexOf('<ScrollView\n');
+  const modeBar = cooking.indexOf('styles.modeBar');
+  assert.ok(modeBar > 0, 'harus ada bilah mode tetap');
+  assert.ok(modeBar < scrollStart, 'bilah mode harus DI ATAS ScrollView, bukan di dalamnya');
+  // Kedua tab harus ada dan bisa ditekan.
+  assert.match(cooking, /onPress=\{\(\) => setMode\('chat'\)\}/, 'tab Chat harus ada');
+  assert.match(cooking, /onPress=\{\(\) => setMode\('voice'\)\}/, 'tab Suara harus ada');
+});
+
+test('panel chat punya tinggi TETAP, bukan hanya maxHeight', () => {
+  // `flex:1` di dalam induk tanpa tinggi pasti menciut jadi nol — panel chat
+  // hilang sama sekali (terjadi di HP, terlihat di tangkapan layar).
+  assert.match(cooking, /height:\s*dockHeight/, 'chatDock harus memakai height tetap');
+  assert.doesNotMatch(cooking, /maxHeight:\s*dockMaxHeight/, 'jangan hanya maxHeight');
+});
+
+test('kartu langkah mengalah pada panel chat, bukan mendorongnya', () => {
+  assert.match(cooking, /contentArea:\s*\{\s*flex:\s*1\s*\}/, 'contentArea harus flex:1');
+  assert.match(cooking, /stepScroll:\s*\{\s*flexShrink:\s*1\s*\}/, 'stepScroll harus flexShrink:1');
 });
