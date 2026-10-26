@@ -116,8 +116,41 @@ export const VOICE_LOADING_STAGES = [
   'Menyiapkan jawaban…',
 ];
 
+/**
+ * Potong bagian TABEL dan bagian dokumen yang ikut tersalin.
+ *
+ * Server RAG menyisipkan dokumen basis pengetahuan ke dalam prompt, dan model
+ * kadang menyalinnya sebagai jawaban: "## Konsep Produk … ## Bahan | Bahan |
+ * Jumlah | |---|---| …". `stripMarkdown` hanya membuang tanda `##` dan pipa,
+ * sehingga sisa tabelnya ("Bahan Bahan Jumlah ------ Beras sorgum 200 g") masih
+ * ikut tampil dan — di mode suara — ikut dibacakan.
+ *
+ * Dipotong dari kemunculan PERTAMA judul bagian atau baris pemisah tabel, lalu
+ * sisanya dibuang. Kalau ternyata tidak ada teks berguna sebelum potongan itu,
+ * hasilnya dikembalikan apa adanya supaya balon tidak pernah kosong.
+ */
+const DOC_SECTION = new RegExp(
+  [
+    // Judul bagian dokumen yang tidak pernah relevan untuk jawaban.
+    '(?:#{1,6}\\s*)?(?:Konsep Produk|Catatan Verifikasi|Catatan Teknis|Analisis Harga)',
+    // Judul tabel bahan, dengan atau tanpa keterangan dalam tanda kurung.
+    '(?:#{1,6}\\s*)?(?:Daftar Bahan|Bahan\\s*(?:\\([^)]*\\))?)\\s*(?:\\||$)',
+    // Baris pemisah tabel markdown: |---|---|
+    '\\|\\s*-{2,}',
+  ].join('|'),
+  'i',
+);
+
+function cutDocumentSections(value: string): string {
+  const cut = value.search(DOC_SECTION);
+  if (cut === -1) return value;
+  const before = value.slice(0, cut).trim();
+  // Pertahankan kalimat yang sudah menjawab; buang sisanya.
+  return before.length > 0 ? before : value;
+}
+
 export function cleanAssistantText(value: string, options?: { maxWords?: number }): string {
-  const cleaned = stripMarkdown(cutVerificationBlock(value), 'inline')
+  const cleaned = stripMarkdown(cutDocumentSections(cutVerificationBlock(value)), 'inline')
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
     .replace(/[\u200B-\u200D\uFE0E\uFE0F]/g, '')
     .replace(/[ \t]+/g, ' ')
