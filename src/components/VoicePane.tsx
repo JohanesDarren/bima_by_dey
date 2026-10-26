@@ -118,14 +118,14 @@ export function VoicePane({
       */}
       <Text style={styles.hint}>
         {state === 'listening'
-          ? 'Sedang merekam. Lepas tombol kalau pertanyaanmu sudah selesai.'
+          ? 'Bicara seperti biasa. Tidak perlu menekan apa pun.'
           : state === 'thinking'
             ? 'Tunggu sebentar, jawaban sedang disusun.'
             : state === 'speaking'
               ? 'Chef AI sedang berbicara. Tunggu sampai selesai.'
               : state === 'error'
                 ? 'Tekan Coba lagi, atau pindah ke mode Chat.'
-                : 'Tekan dan tahan tombol di bawah untuk bicara.'}
+                : 'Menyiapkan mikrofon dan suara.'}
       </Text>
 
       {/*
