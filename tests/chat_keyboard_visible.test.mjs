@@ -22,7 +22,11 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
-const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Normalisasi akhir baris: checkout Windows memberi CRLF, prettier memberi LF.
+// Tanpa ini uji bergantung pada platform — persis yang membuatnya gagal
+// di checkout bersih padahal kodenya benar.
+const read = (rel) =>
+  fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n');
 
 const cooking = read('src/screens/CookingScreen.tsx');
 const hook = read('src/hooks/useKeyboardVisible.ts');
@@ -74,8 +78,11 @@ test('pemilih mode SELALU terlihat, tidak di dalam kartu langkah', () => {
   // Regresi nyata: tombol mode berada di dalam kartu langkah yang bisa tergulir
   // keluar layar. Di mode suara tombolnya hilang, jadi pengguna tidak bisa
   // kembali ke mode chat sama sekali.
-  // '<ScrollView' saja akan cocok dengan useRef<ScrollView> di atas; cari tag JSX-nya.
-  const scrollStart = cooking.indexOf('<ScrollView\n');
+  // '<ScrollView' saja juga cocok dengan useRef<ScrollView>(null); cari tag JSX-nya.
+  // `useRef<ScrollView>(null)` juga mengandung '<ScrollView', diikuti '>' dari
+  // penutup tipe generik. Tag JSX sesungguhnya berada di AWAL baris (setelah
+  // indentasi), jadi patokannya indentasi — bukan karakter sesudah nama.
+  const scrollStart = cooking.search(/^\s*<ScrollView\b/m);
   const modeBar = cooking.indexOf('styles.modeBar');
   assert.ok(modeBar > 0, 'harus ada bilah mode tetap');
   assert.ok(modeBar < scrollStart, 'bilah mode harus DI ATAS ScrollView, bukan di dalamnya');
